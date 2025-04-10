@@ -8,5 +8,6 @@ dependencies = [
     "ipykernel>=6.29.5",
     "numpy>=2.2.4",
     "pandas>=2.2.3",
+    "pydantic>=2.11.3",
     "pyvista>=0.44.2",
 ]

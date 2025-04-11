@@ -1,0 +1,9 @@
+{
+    "python.analysis.autoImportCompletions": true,
+    "editor.semanticHighlighting.enabled": true,
+    "python.languageServer": "Pylance",
+    "workbench.colorTheme": "Default Dark+",
+    "extensions.experimental.affinity": {
+        "asvetliakov.vscode-neovim": 1
+    }
+}

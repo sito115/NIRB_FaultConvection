@@ -6,5 +6,10 @@ dist/
 wheels/
 *.egg-info
 
+# Specific Folders
+PythonSkripts/*
+
 # Virtual environments
 .venv
+uv.lock
+

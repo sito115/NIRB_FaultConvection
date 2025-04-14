@@ -1,0 +1,10 @@
+[submodule "ComsolClasses"]
+	path = ComsolClasses
+	url = http://10.0.1.2:3000/tsimader/ComsolClasses.git
+[submodule "MPh"]
+	path = MPh
+	url = http://10.0.1.2:3000/GeomeconMain/MPh.git
+	branch = module
+[submodule "NI-RBGeomechanics"]
+	path = NI-RBGeomechanics
+	url = http://10.0.1.2:3000/tsimader/NI-RBGeomechanics.git

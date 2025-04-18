@@ -7,9 +7,8 @@ from ComsolClasses.helper import calculate_normal
 from pint import UnitRegistry, Quantity
 import ast
 import numpy as np
-import plotly.graph_objects as go
 from tqdm import tqdm
-import plotly.express as px
+
 
 def convert_str_to_pint(value):
     ureg = UnitRegistry()
@@ -28,7 +27,8 @@ def convert_str_to_pint(value):
 def main():
     IS_EXPORT_MP4 = False
     EXPORT_FIELD = "Temperature"
-    IS_EXPORT_MINMAX_TEMP = True
+    IS_EXPORT_MINMAX_TEMP = False
+    IS_EXPORT_NPY = False
     
     data_folder = Path("Snapshots/01/Training")
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
@@ -37,8 +37,10 @@ def main():
   
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
     
-    fig = go.Figure()
-    colors = px.colors.sample_colorscale("jet", [n/(len(vtu_files)) for n in range(len(vtu_files))])
+    N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
+    N_POINTS          = COMSOL_VTU(vtu_files[0]).mesh.points.shape[0]
+    temperatures      = np.zeros((len(vtu_files), N_TIME_STEPS, N_POINTS))
+    temperatures_diff = np.zeros_like(temperatures)
     sim_times = np.zeros((len(vtu_files), ))
     for idx, vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         comsol_data = COMSOL_VTU(vtu_file)
@@ -70,34 +72,23 @@ def main():
             comsol_data.export_mp4_movie(field='Temperature',
                                         mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}.mp4",
                                         **kwargs)
+            
+            
+            df = pd.DataFrame().from_dict(parameters_pint, orient='index')
+            df.index = df.index.astype(str)
+            df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
         
         if IS_EXPORT_MINMAX_TEMP:
             temp_array = comsol_data.get_array('Temperature')
-            # customdata=np.stack(([t_h] * len(comsol_data.times), [host_k] * len(comsol_data.times)) , axis=-1),
-            input_args = {'x' : list(comsol_data.times.values()),
-                        #   'customdata' : customdata,
-                        #   'hovertemplate' : "Time: %{x:.2e}<br>Temperature: %{y:.2f}<br>T_h: %{customdata[0]:.2f}<br><br>host_k: %{customdata[1]:.2e}<br>",
-                          'legendgroup' : f"{comsol_data.vtu_path.stem}",
-                          'line' : dict(color=colors[idx])}
-            fig.add_trace(go.Scatter(y=np.max(temp_array, axis=1), **input_args))
-            fig.add_trace(go.Scatter(y=np.min(temp_array, axis=1), **input_args))
+            temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
+            temperatures[idx, :, :] = temp_array
+            temperatures_diff[idx, :, :] = temp_diff
 
-        df = pd.DataFrame().from_dict(parameters_pint, orient='index')
-        df.index = df.index.astype(str)
-        df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
-    
-    fig.update_layout(
-        title="Min/Max Temperature",
-        xaxis_title="Time (s)",
-            xaxis=dict(\
-            tickformat = '.2e',
-            showexponent = 'all',
-            exponentformat = 'e'),
-        yaxis_title="Temperature (K)",
-        showlegend=False,
-    )
-    # fig = go.Figure(data=[go.Histogram(x=sim_times)])
-    fig.show()
+    if IS_EXPORT_NPY:
+        np.save(export_folder / "sim_times.npy", np.array(sim_times))
+        np.save(export_folder / "temperatures.npy", temperatures      )
+        np.save(export_folder / "temperatures_diff.npy", temperatures_diff )
+
     
 if __name__ == "__main__":
     main()

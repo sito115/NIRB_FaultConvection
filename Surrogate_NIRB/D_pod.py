@@ -45,7 +45,7 @@ if __name__ == "__main__":
     data_set_scaled = min_max_scaler(data_set)
     
     pod = POD(POD_snapshots=data_set_scaled)
-    pod.perform_POD(accuracy=1e-4)
+    pod.perform_POD(accuracy=1e-3)
     print(pod.basis_fts_matrix)
     print(pod.information_content)
     print(np.cumsum(pod.information_content))

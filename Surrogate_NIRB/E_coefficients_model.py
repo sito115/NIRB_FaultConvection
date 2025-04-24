@@ -1,7 +1,6 @@
 import lightning as L
-from sympy import im
 import torch
-from torch import nn, optim, Tensor, utils
+from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
 from torchinfo import summary
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -14,69 +13,105 @@ from torchmetrics import (MeanSquaredError ,
 from lightning.pytorch.callbacks import RichProgressBar, EarlyStopping
 from torchmetrics.regression import MeanSquaredError as MSE
 import time
-from helpers import load_pint_data
+from helpers import load_pint_data, min_max_scaler, standardize
 from pathlib import Path
+import pickle
+from typing import List
 
-
-class BuildingBlock(nn.Module):
-
-    def __init__(self,
-                 in_channels,
-                 out_channels):
-        super(BuildingBlock, self).__init__()
-
-        self.linear = nn.Linear(in_features=in_channels,
-                                out_features=out_channels)
-        self.activation = nn.ReLU()# nn.ReLU()
-        self.dropout = nn.Dropout(0.)
-
-    def forward(self, x):
-        return self.dropout(self.activation(self.linear(x)))
 
 
 class NIRB_NN(nn.Module):
-    def __init__(self, n_input: int, n_output: int):
+    def __init__(self, n_inputs: int,
+                 hidden_units: List[int],
+                 n_outputs: int,
+                 activation = nn.Sigmoid()):
         super().__init__()
         
-        self.n_input = n_input
-        self.n_output = n_output
+        all_layers = []
+        for hidden_unit in hidden_units:
+            layer = nn.Linear(n_inputs, hidden_unit)
+            all_layers.append(layer)
+            all_layers.append(activation)
+            n_inputs = hidden_unit
+    
+        output_layer = nn.Linear(hidden_units[-1], n_outputs)
+        all_layers.append(output_layer) 
         
-        
-        self.input = nn.Linear(n_input, 8)
-        
-        sizes = [
-                #  (2,  8),
-                 (8,  16),
-                 (16, 32),
-                #  (32, 64),
-                #  (64, 32),
-                 (32, 16),
-                 ]
-
-        self.sequential = nn.Sequential(*[BuildingBlock(in_, out_) \
-                                          for in_, out_ in sizes])
-        
-        self.output = nn.Linear(16, self.n_output)
+        self.layers = nn.Sequential(*all_layers)        
 
 
     def forward(self, x):
         # Flatten all dimensions except the batch dimension
         x  = torch.flatten(x, start_dim=1)
-        x = self.input(x)
-        return self.output(self.sequential(x))
+        logits = self.layers(x)
+        return logits
+
+
+class NirbDataModule(L.LightningDataModule):
+    def __init__(self,
+                 basis_func_mtrx : np.ndarray,
+                 training_snaps: np.ndarray,
+                 training_param: np.ndarray,
+                 test_snaps: np.ndarray = None,
+                 test_param: np.ndarray = None,
+                 batch_size: int = 20):
+        super().__init__()
+        self.basis_func_mtrx = basis_func_mtrx 
+        self.training_snaps = training_snaps 
+        self.training_param = training_param 
+        self.test_snaps = test_snaps 
+        self.test_param = test_param 
+        self.batch_size = batch_size 
+        
+        self.mean = np.mean(self.training_param, axis=0)
+        self.var = np.var(self.training_param, axis=0)
+
+    def prepare_data(self) -> None:
+        self.training_param = standardize(self.training_param, self.mean, self.var)
+        self.training_snaps = min_max_scaler(self.training_snaps)
+        self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps.T)
+        if self.test_param is not None:
+            self.test_param = standardize(self.test_param, self.mean, self.var)
+        if self.test_snaps is not None:
+            self.test_snaps = min_max_scaler(self.test_snaps)
+            self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps.T)
+
+    def setup(self, stage:str):
+        if stage == "fit":
+            self.dataset_train = TensorDataset(torch.from_numpy(self.training_param.astype(np.float32)),
+                                               torch.from_numpy(self.training_coeff.T.astype(np.float32)))
+            
+        if stage == "test":
+            self.dataset_test = TensorDataset(torch.from_numpy(self.test_param.astype(np.float32)),
+                                               torch.from_numpy(self.test_coeff.T.astype(np.float32)))
+            
+
+    def train_dataloader(self):
+        return DataLoader(self.dataset_train,
+                          batch_size=self.batch_size,
+                          shuffle=True)
+
+    def test_dataloader(self):
+        return DataLoader(self.dataset_test,
+                          batch_size=self.batch_size,
+                          shuffle=True)
+
 
 
 class NirbModule(L.LightningModule):
-    def __init__(self, n_inputs: int, n_outputs: int):
+    def __init__(self, n_inputs: int,
+                 hidden_units: List[int],
+                 n_outputs: int,
+                 activation = nn.Sigmoid()):
         super().__init__()
-        self.save_hyperparameters()
-        
-
-        self.model : torch.nn.Module = NIRB_NN(n_inputs, n_outputs)
+    
         self.learning_rate = 1e-3
         self.loss = nn.MSELoss()
+        self.activation = activation
+        self.model = NIRB_NN(n_inputs, hidden_units, n_outputs, self.activation)
         
         self.msa_metric = MeanAbsoluteError()
+        self.save_hyperparameters()
         
     def forward(self, x):
         return self.model(x)
@@ -112,11 +147,11 @@ class NirbModule(L.LightningModule):
         return self(batch)
 
 
-def create__train_dataloaders(param_path, basis_func_path, snapshot_path) -> DataLoader:
+def create__train_dataloaders(param_path, basis_func_path, snapshot_path, batch_size: int = 20) -> DataLoader:
 
     print(f"Available CPUs: {os.cpu_count()}")  # This will print the number of CPU cores available
     
-    n_training = 20
+    n_training = 90
     
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(snapshot_path)
@@ -126,6 +161,8 @@ def create__train_dataloaders(param_path, basis_func_path, snapshot_path) -> Dat
     training_snapshots = training_snapshots[:n_training, -1, :] # last time step
     training_parameters = training_parameters[:n_training, 2:]
     
+    # Min-Max Scaling
+    training_snapshots = min_max_scaler(training_snapshots)
     
     # Calculate mean/var from training snapshots
     mean = np.mean(training_parameters, axis=0)
@@ -147,7 +184,7 @@ def create__train_dataloaders(param_path, basis_func_path, snapshot_path) -> Dat
     dataset_train = TensorDataset(torch.from_numpy(training_parameters.astype(np.float32)),
                                   torch.from_numpy(training_coeff.T.astype(np.float32)))
     dataloader_train = DataLoader(dataset_train,
-                                batch_size=BATCH_SIZE,
+                                batch_size=batch_size,
                                 shuffle=True,
                                 # pin_memory=True,
                                 # num_workers=N_WORKERS,
@@ -156,34 +193,60 @@ def create__train_dataloaders(param_path, basis_func_path, snapshot_path) -> Dat
     return dataloader_train
 
 
+
 if __name__ == "__main__":
     seed_everything(42) 
-    BATCH_SIZE = 10
-    LR = 1e-4
-    N_EPOCHS = 20_000
+    BATCH_SIZE = 20
+    LR = 5e-4
+    N_EPOCHS = 300_000
     N_WORKERS = 0
     ROOT = Path.cwd() / "Snapshots" / "01"
+    # DATA_TYPE = "Trai"
     
-    param_path = ROOT / "training_samples.csv"
+
     basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
-    snapshots_path = ROOT / "Exports" / "temperatures.npy"
+    train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
+    test_snapshots_path = ROOT / "Exports" / "Test_temperatures.npy"
+    train_param_path = ROOT / "training_samples.csv"
+    test_param_path = ROOT / "test_samples.csv"
     
-    dataloader_train = create__train_dataloaders(param_path=param_path,
-                                                basis_func_path=basis_func_path,
-                                                snapshot_path=snapshots_path)
     
-    for x, y in dataloader_train:
-        n_inputs = x.shape[1]
-        n_outputs = y.shape[1]
-        print("x shape:", x.shape)
-        print("y shape:", y.shape)
-        break  # only check the first batch
+    basis_functions         = np.load(basis_func_path)
+    training_snapshots      = np.load(train_snapshots_path)
+    training_parameters     = load_pint_data(train_param_path, is_numpy = True)
+    test_snapshots          = np.load(test_snapshots_path)
+    test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
-    model = NirbModule(n_inputs, n_outputs)
+    # Prepare data
+    training_snapshots = training_snapshots[:, -1, :] # last time step
+    training_parameters = training_parameters[:, 2:] 
+    test_snapshots = test_snapshots[:, -1, :] # last time step
+    test_parameters = test_parameters[:, 2:] 
+     
+     
+    dm = NirbDataModule(
+        basis_func_mtrx=basis_functions,
+        training_snaps=training_snapshots,
+        training_param=training_parameters,
+        test_param=training_parameters,
+        test_snaps=training_snapshots,
+        batch_size=20,
+    )
+    
+    # dataloader_train = create__train_dataloaders(param_path=param_path,
+    #                                             basis_func_path=basis_func_path,
+    #                                             snapshot_path=snapshots_path)
+    
+
+    n_inputs = training_parameters.shape[1]
+    n_outputs = basis_functions.shape[0]
+
+    
+    model = NirbModule(n_inputs, [6, 16, 32, 64, 32], n_outputs)
     model.learning_rate = LR
     
     summary(model.model, 
-            input_size=(1, n_inputs),
+            input_size=training_parameters.shape,
             col_names=["input_size",
                        "output_size",
                        "num_params"],)
@@ -200,8 +263,7 @@ if __name__ == "__main__":
 
     logger = TensorBoardLogger(ROOT, name="nn_logs")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        min_epochs=int(0.5*N_EPOCHS),
-                        logger=logger,
+                        logger=None,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
                         # enable_checkpointing=True,
                         # callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
@@ -210,15 +272,24 @@ if __name__ == "__main__":
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=3,
+                        devices=1,
                         accelerator= "cpu" #'mps',
                         )
     
+    
     start_time = time.time()
-    chkt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_0/checkpoints/epoch=49999-step=50000.ckpt"
+    ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_27/checkpoints/epoch=99999-step=200000.ckpt"
     trainer.fit(model=model,
-                train_dataloaders=dataloader_train,
+                datamodule=dm,
                 ckpt_path = None)
-    end_time = time.time() 
-    print(f"Total training time = {end_time-start_time:.2f} s")
-    trainer.save_checkpoint(ROOT / "latest.ckpt")
+    trainer.test(model=model,
+                 datamodule=dm)
+    
+    
+    # end_time = time.time() 
+    # print(f"Total training time = {end_time-start_time:.2f} s")
+    # with open(Path(logger.log_dir) / "LightningModule.pkl", "wb") as f:
+    #     pickle.dump(model, f)
+    # with open(Path(logger.log_dir) / "NNModel.pkl", "wb") as f:
+    #     pickle.dump(NIRB_NN(n_inputs, n_outputs), f)
+    # trainer.save_checkpoint(ROOT / "latest.ckpt")

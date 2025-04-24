@@ -147,52 +147,6 @@ class NirbModule(L.LightningModule):
         return self(batch)
 
 
-def create__train_dataloaders(param_path, basis_func_path, snapshot_path, batch_size: int = 20) -> DataLoader:
-
-    print(f"Available CPUs: {os.cpu_count()}")  # This will print the number of CPU cores available
-    
-    n_training = 90
-    
-    basis_functions         = np.load(basis_func_path)
-    training_snapshots      = np.load(snapshot_path)
-    training_parameters     = load_pint_data(param_path, is_numpy = True)
-    
-    # Prepare data
-    training_snapshots = training_snapshots[:n_training, -1, :] # last time step
-    training_parameters = training_parameters[:n_training, 2:]
-    
-    # Min-Max Scaling
-    training_snapshots = min_max_scaler(training_snapshots)
-    
-    # Calculate mean/var from training snapshots
-    mean = np.mean(training_parameters, axis=0)
-    var = np.var(training_parameters, axis=0)
-    
-    
-    # Standardization
-    training_parameters    = (training_parameters - mean)/np.sqrt(var)
-    
-    # Calculate y in NN for training
-    training_coeff = np.matmul(basis_functions, training_snapshots.T)
-    
-    # Check shapes
-    print(f"{basis_functions.shape=}")         
-    print(f"{training_snapshots.shape=}")      
-    print(f"{training_parameters.shape=}")     
-    print(f"{training_coeff.shape=}")
-    
-    dataset_train = TensorDataset(torch.from_numpy(training_parameters.astype(np.float32)),
-                                  torch.from_numpy(training_coeff.T.astype(np.float32)))
-    dataloader_train = DataLoader(dataset_train,
-                                batch_size=batch_size,
-                                shuffle=True,
-                                # pin_memory=True,
-                                # num_workers=N_WORKERS,
-                                # persistent_workers=True,
-                                )
-    return dataloader_train
-
-
 
 if __name__ == "__main__":
     seed_everything(42) 

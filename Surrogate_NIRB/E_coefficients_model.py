@@ -47,7 +47,7 @@ class NIRB_NN(nn.Module):
         return logits
 
 
-class NirbDataModule(L.LightningDataModule):
+class NirbDataModule():
     def __init__(self,
                  basis_func_mtrx : np.ndarray,
                  training_snaps: np.ndarray,
@@ -55,7 +55,7 @@ class NirbDataModule(L.LightningDataModule):
                  test_snaps: np.ndarray = None,
                  test_param: np.ndarray = None,
                  batch_size: int = 20):
-        super().__init__()
+
         self.basis_func_mtrx = basis_func_mtrx 
         self.training_snaps = training_snaps 
         self.training_param = training_param 
@@ -65,8 +65,10 @@ class NirbDataModule(L.LightningDataModule):
         
         self.mean = np.mean(self.training_param, axis=0)
         self.var = np.var(self.training_param, axis=0)
+        self.compute_coefficients()
+        self.setup()
 
-    def prepare_data(self) -> None:
+    def compute_coefficients(self) -> None:
         self.training_param = standardize(self.training_param, self.mean, self.var)
         self.training_snaps = min_max_scaler(self.training_snaps)
         self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps.T)
@@ -76,25 +78,26 @@ class NirbDataModule(L.LightningDataModule):
             self.test_snaps = min_max_scaler(self.test_snaps)
             self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps.T)
 
-    def setup(self, stage:str):
-        if stage == "fit":
-            self.dataset_train = TensorDataset(torch.from_numpy(self.training_param.astype(np.float32)),
-                                               torch.from_numpy(self.training_coeff.T.astype(np.float32)))
+    def setup(self) -> None:
+        self.dataset_train = TensorDataset(torch.from_numpy(self.training_param.astype(np.float32)),
+                                            torch.from_numpy(self.training_coeff.T.astype(np.float32)))
             
-        if stage == "test":
+        if self.test_snaps is not None:
             self.dataset_test = TensorDataset(torch.from_numpy(self.test_param.astype(np.float32)),
-                                               torch.from_numpy(self.test_coeff.T.astype(np.float32)))
+                                              torch.from_numpy(self.test_coeff.T.astype(np.float32)))
             
 
-    def train_dataloader(self):
+    def train_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_train,
                           batch_size=self.batch_size,
-                          shuffle=True)
+                          shuffle=True,
+                          *kwargs)
 
-    def test_dataloader(self):
+    def test_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_test,
                           batch_size=self.batch_size,
-                          shuffle=True)
+                          shuffle=True,
+                          *kwargs)
 
 
 
@@ -102,10 +105,11 @@ class NirbModule(L.LightningModule):
     def __init__(self, n_inputs: int,
                  hidden_units: List[int],
                  n_outputs: int,
-                 activation = nn.Sigmoid()):
+                 activation = nn.Sigmoid(),
+                 learning_rate : float = 1e-3):
         super().__init__()
     
-        self.learning_rate = 1e-3
+        self.learning_rate = learning_rate
         self.loss = nn.MSELoss()
         self.activation = activation
         self.model = NIRB_NN(n_inputs, hidden_units, n_outputs, self.activation)
@@ -151,11 +155,10 @@ class NirbModule(L.LightningModule):
 if __name__ == "__main__":
     seed_everything(42) 
     BATCH_SIZE = 20
-    LR = 5e-4
-    N_EPOCHS = 300_000
-    N_WORKERS = 0
-    ROOT = Path.cwd() / "Snapshots" / "01"
-    # DATA_TYPE = "Trai"
+    LR = 3e-3
+    N_EPOCHS = 200_000
+    ROOT = Path(__file__).parent.parent / "Snapshots" / "01"
+    assert ROOT.exists(), f"Not found: {ROOT}"
     
 
     basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
@@ -187,17 +190,14 @@ if __name__ == "__main__":
         batch_size=20,
     )
     
-    # dataloader_train = create__train_dataloaders(param_path=param_path,
-    #                                             basis_func_path=basis_func_path,
-    #                                             snapshot_path=snapshots_path)
-    
-
     n_inputs = training_parameters.shape[1]
     n_outputs = basis_functions.shape[0]
-
     
-    model = NirbModule(n_inputs, [6, 16, 32, 64, 32], n_outputs)
-    model.learning_rate = LR
+    model = NirbModule(n_inputs,
+                       [8, 16, 32, 64, 128, 32],
+                       n_outputs,
+                       activation=nn.Sigmoid(),
+                       learning_rate=LR)
     
     summary(model.model, 
             input_size=training_parameters.shape,
@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     logger = TensorBoardLogger(ROOT, name="nn_logs")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        logger=None,
+                        logger=logger,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
                         # enable_checkpointing=True,
                         # callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
@@ -226,21 +226,19 @@ if __name__ == "__main__":
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=1,
+                        devices=5,
                         accelerator= "cpu" #'mps',
                         )
     
-    
-    start_time = time.time()
+
     ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_27/checkpoints/epoch=99999-step=200000.ckpt"
     trainer.fit(model=model,
-                datamodule=dm,
+                train_dataloaders=dm.train_dataloader(),
                 ckpt_path = None)
     trainer.test(model=model,
-                 datamodule=dm)
+                 dataloaders=dm.test_dataloader())
     
-    
-    # end_time = time.time() 
+
     # print(f"Total training time = {end_time-start_time:.2f} s")
     # with open(Path(logger.log_dir) / "LightningModule.pkl", "wb") as f:
     #     pickle.dump(model, f)

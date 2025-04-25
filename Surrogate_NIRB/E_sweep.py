@@ -8,7 +8,7 @@ from torch import nn
 from torchinfo import summary
 from optuna.trial import TrialState
 import numpy as np
-
+from lightning.pytorch.callbacks import EarlyStopping
 
 def objective(trial):
     # Architecture: variable number of layers and neurons per layer
@@ -92,13 +92,23 @@ def objective(trial):
             col_names=["input_size",
                        "output_size",
                        "num_params"],)
-
+            
+    early_stop = EarlyStopping(
+        monitor="train_loss",        # or "val_loss"
+        stopping_threshold=1e-8,      # 💥 stop when loss drops below this
+        divergence_threshold=10_000,
+        mode="min",                  # we're minimizing loss
+        verbose=True,
+        patience=10_000,
+        check_on_train_epoch_end=True
+        )
+    
     logger = TensorBoardLogger(ROOT, name="nn_logs_opti_new")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
                         logger=logger,
                         log_every_n_steps=100,  # Reduce logging frequency
                         # enable_checkpointing=True,
-                        # callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
+                        callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
                         # precision=16,
                         # max_time={"days": 0, "hours": 0, "minutes": 25},
                         # strategy='ddp',

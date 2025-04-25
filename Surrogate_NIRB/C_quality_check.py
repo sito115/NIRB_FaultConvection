@@ -17,7 +17,7 @@ def convert_str_to_pint(value):
             splitted_value = value.split("[") 
             numeric_value = float(splitted_value[0])
             unit = splitted_value[1].split("]")[0]
-            return ureg.Quantity(numeric_value, unit)
+            return ureg.Quantity(numeric_value, unit).to_base_units()
         else:
             return float(value) * ureg("dimensionless")
     except ValueError:
@@ -27,13 +27,20 @@ def convert_str_to_pint(value):
 def main():
     IS_EXPORT_MP4 = False
     EXPORT_FIELD = "Temperature"
-    IS_EXPORT_MINMAX_TEMP = False
-    IS_EXPORT_NPY = False
+    IS_EXPORT_MINMAX_TEMP = True
+    IS_EXPORT_NPY = True
+    IS_EXPORT_DF = False
     
-    data_folder = Path("Snapshots/01/Training")
+    
+    ROOT = Path(__file__).parent.parent
+    VERSION = "02"
+    data_type = "Test"
+    
+    data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
+    
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
     export_folder =  data_folder.parent / "Exports"
-    assert export_folder.exists(), f"Data folder {export_folder} does not exist."
+    assert export_folder.exists(), f"Export folder {export_folder} does not exist."
   
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
     
@@ -65,29 +72,33 @@ def main():
             kwargs={'normal' : -np.array(normal),
                 'origin' : comsol_data.mesh.center,
                 'movie_field' : EXPORT_FIELD + "-T0",
-                'is_diff' : True,
+                'is_diff' : False,
                 'is_ind_cmap':True,
                 't_grad': {'t0': t_c,
-                            't_grad': t_grad}}
+                          't_grad': t_grad}}
             comsol_data.export_mp4_movie(field='Temperature',
-                                        mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}.mp4",
+                                        mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}_Tot.mp4",
                                         **kwargs)
             
+            if IS_EXPORT_DF:
+                df = pd.DataFrame().from_dict(parameters_pint,
+                                            orient='index')
+                df.columns = ['quantity'] 
+                                            # columns=['Parameter', "Value"])
+                df.index = df.index.astype(str)
+                df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
             
-            df = pd.DataFrame().from_dict(parameters_pint, orient='index')
-            df.index = df.index.astype(str)
-            df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
-        
         if IS_EXPORT_MINMAX_TEMP:
             temp_array = comsol_data.get_array('Temperature')
             temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
-            temperatures[idx, :, :] = temp_array
-            temperatures_diff[idx, :, :] = temp_diff
+            time_len = temp_array.shape[0]
+            temperatures[idx, :time_len, :] = temp_array
+            temperatures_diff[idx, :time_len, :] = temp_diff
 
     if IS_EXPORT_NPY:
-        np.save(export_folder / "sim_times.npy", np.array(sim_times))
-        np.save(export_folder / "temperatures.npy", temperatures      )
-        np.save(export_folder / "temperatures_diff.npy", temperatures_diff )
+        np.save(export_folder / f"{data_type}_sim_times.npy", np.array(sim_times))
+        np.save(export_folder / f"{data_type}_temperatures.npy", temperatures      )
+        np.save(export_folder / f"{data_type}_temperatures_diff.npy", temperatures_diff )
 
     
 if __name__ == "__main__":

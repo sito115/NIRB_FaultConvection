@@ -12,7 +12,7 @@ class POD:
        
     POD_snapshots      : np.ndarray 
     
-    def perform_POD(self, accuracy: float = 1e-3):
+    def perform_POD(self, accuracy: float = 1e-3) -> None:
         """ Performs the POD for the parameters. This POD algorithm should be
             used for time-independent (steady-state) applications
 

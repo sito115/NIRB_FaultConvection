@@ -11,17 +11,12 @@ import pint_pandas
 import pint
 from pint.delegates.formatter._format_helpers import formatter
 
-ureg = pint.UnitRegistry()
+# ureg = pint.UnitRegistry()
 # Create a custom Unit class that overrides the default string representation
-@pint.register_unit_format("COMSOL")
-def format_unit_simple(unit, registry, **options):
-    return " * ".join(f"{u} ** {p}" for u, p in unit.items())
+# @pint.register_unit_format("COMSOL")
+# def format_unit_simple(unit, registry, **options):
+#     return " * ".join(f"{u} ** {p}" for u, p in unit.items())
 
-
-class Distribution(enum.Enum):
-    uniform = "uniform"
-    normal = "normal"
-    lognormal = "lognormal"
 
 @dataclass
 class Parameter:
@@ -60,6 +55,8 @@ def main():
     N_TRAINING = 100
     N_TEST = 20
     pint_pandas.PintType.ureg.formatter.default_format = "#D~"
+    
+    
     ### DEFINE PARAMETERS
     parameters: List[Parameter] = []
     # parameters.append(Parameter("fault_k_trans", [1e-18, 1e-12], unit="m^2", is_log=True))

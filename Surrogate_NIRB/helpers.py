@@ -31,7 +31,17 @@ def inverse_min_max_scaler(data: np.ndarray, min_val: float, max_val: float) -> 
     """
     return data * (max_val - min_val) + min_val
 
+
 def safe_parse_quantity(s, ureg: pint.UnitRegistry = pint.UnitRegistry()):
+    """Convert string quantities in Dataframe to pint quantities.
+
+    Args:
+        s (_type_): String quantity, e.g. "0.2 m*m"
+        ureg (pint.UnitRegistry, optional): _description_. Defaults to pint.UnitRegistry().
+
+    Returns:
+        _type_: pint quantity
+    """    
     try:
         return ureg(s)
     except Exception:
@@ -39,6 +49,14 @@ def safe_parse_quantity(s, ureg: pint.UnitRegistry = pint.UnitRegistry()):
 
 
 def load_pint_data(path: Path, **kwargs) -> pd.DataFrame:
+    """Load csv that has parameter names in the first row and units in the second row.
+
+    Args:
+        path (Path): _description_
+
+    Returns:
+        pd.DataFrame: _description_
+    """    
     header = kwargs.pop("header", [0, 1])
     level = kwargs.pop("level", -1)
     training_param = pd.read_csv(path, header=header)

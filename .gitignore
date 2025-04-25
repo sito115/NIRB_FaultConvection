@@ -5,11 +5,19 @@ build/
 dist/
 wheels/
 *.egg-info
+classes/*
 
 # Specific Folders
 PythonSkripts/*
-
+# Snapshots/
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+*.mp4
+*.vtu
+*.yaml
+*.ckpt
+events.out*
 # Virtual environments
 .venv
 uv.lock
-
+.DS_Store

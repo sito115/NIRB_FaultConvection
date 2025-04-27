@@ -34,4 +34,6 @@ jupyter = [
     "nbformat>=5.10.4",
     "trame-jupyter-extension>=2.1.4",
 ]
+
+[dependency-groups]
 dev = ["vtk>=9.3.1", "autopep8>=2.3.2"]

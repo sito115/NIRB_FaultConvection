@@ -6,21 +6,16 @@ from torchinfo import summary
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch import seed_everything
 import numpy as np
-import os
-from torchmetrics import (MeanSquaredError ,
-                          R2Score,
-                          MeanAbsoluteError)
-from lightning.pytorch.callbacks import RichProgressBar, EarlyStopping
-from torchmetrics.regression import MeanSquaredError as MSE
-import time
+from torchmetrics import MeanAbsoluteError
 from helpers import load_pint_data, min_max_scaler, standardize
 from pathlib import Path
-import pickle
 from typing import List
 
 
 
 class NIRB_NN(nn.Module):
+    """Pytorch Neural Network
+    """    
     def __init__(self, n_inputs: int,
                  hidden_units: List[int],
                  n_outputs: int,
@@ -55,7 +50,16 @@ class NirbDataModule():
                  test_snaps: np.ndarray = None,
                  test_param: np.ndarray = None,
                  batch_size: int = 20):
+        """Data Module for NIRB.
 
+        Args:
+            basis_func_mtrx (np.ndarray): Basis Functions (n_basis x n_points)
+            training_snaps (np.ndarray): Training Snapshots (n_snaps x n_points)
+            training_param (np.ndarray): Training Parameters (n_snaps x n_parameters)
+            test_snaps (np.ndarray, optional): _description_. Defaults to None. (n_snaps x n_points)
+            test_param (np.ndarray, optional): _description_. Defaults to None. (n_snaps x n_parameters)
+            batch_size (int, optional): _description_. Defaults to 20.
+        """
         self.basis_func_mtrx = basis_func_mtrx 
         self.training_snaps = training_snaps 
         self.training_param = training_param 
@@ -69,6 +73,8 @@ class NirbDataModule():
         self.setup()
 
     def compute_coefficients(self) -> None:
+        """Calculcates the coefficients (output of NN) for training and test.
+        """        
         self.training_param = standardize(self.training_param, self.mean, self.var)
         self.training_snaps = min_max_scaler(self.training_snaps)
         self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps.T)
@@ -79,6 +85,8 @@ class NirbDataModule():
             self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps.T)
 
     def setup(self) -> None:
+        """Generates TensorDatasets for Training and Test.
+        """        
         self.dataset_train = TensorDataset(torch.from_numpy(self.training_param.astype(np.float32)),
                                             torch.from_numpy(self.training_coeff.T.astype(np.float32)))
             
@@ -204,25 +212,12 @@ if __name__ == "__main__":
             col_names=["input_size",
                        "output_size",
                        "num_params"],)
-    
-    
-    early_stop = EarlyStopping(
-        monitor="train_loss",        # or "val_loss"
-        stopping_threshold=1e-8,      # 💥 stop when loss drops below this
-        mode="min",                  # we're minimizing loss
-        verbose=True,
-        patience=int(0.25*N_EPOCHS),
-        check_on_train_epoch_end=True
-        )
+
 
     logger = TensorBoardLogger(ROOT, name="nn_logs")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
                         logger=logger,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
-                        # enable_checkpointing=True,
-                        # callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
-                        # precision=16,
-                        # max_time={"days": 0, "hours": 0, "minutes": 25},
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
@@ -231,17 +226,9 @@ if __name__ == "__main__":
                         )
     
 
-    ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_27/checkpoints/epoch=99999-step=200000.ckpt"
+    # ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_27/checkpoints/epoch=99999-step=200000.ckpt"
     trainer.fit(model=model,
                 train_dataloaders=dm.train_dataloader(),
                 ckpt_path = None)
     trainer.test(model=model,
                  dataloaders=dm.test_dataloader())
-    
-
-    # print(f"Total training time = {end_time-start_time:.2f} s")
-    # with open(Path(logger.log_dir) / "LightningModule.pkl", "wb") as f:
-    #     pickle.dump(model, f)
-    # with open(Path(logger.log_dir) / "NNModel.pkl", "wb") as f:
-    #     pickle.dump(NIRB_NN(n_inputs, n_outputs), f)
-    # trainer.save_checkpoint(ROOT / "latest.ckpt")

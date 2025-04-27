@@ -1,4 +1,8 @@
-import mph
+import sys
+import os
+# Get the parent directory
+sys.path.insert(0, os.getcwd())
+from MPh import mph
 from pathlib import Path
 import logging
 import time
@@ -7,47 +11,63 @@ import numpy as np
 import pandas as pd
 import pint
 import pint_pandas
-from pint.delegates.formatter.plain import DefaultFormatter
-from pint.delegates.formatter._format_helpers import formatter
-from pint.delegates.formatter._compound_unit_helpers import prepare_compount_unit, localize_per
 
-logging.basicConfig(
-    filename= Path(__file__).parent / 'NIRB.log',    # Log file name
-    level=logging.DEBUG,               # Set the lowest level of logging to capture
-    format='%(asctime)s - %(levelname)s - %(message)s',  # Define the format of log messages
-)
+
+def setup_logger(is_console: bool, level = logging.DEBUG):
+    # Define the log file path
+    log_file_path = Path(__file__).parent / 'NIRB.log'
+
+    # Set up logging
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+
+    # Create formatter
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    # File handler to log to a file
+    # Stream handler to log to the console
+    if is_console:
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    else:
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
 
 def format_comsol_unit(unit):
     return "[" + unit.replace("**", "^") + "]"
     
-
-
+    
 def training_loop():
-
+    #Pint: Default number formatting, compact
     pint_pandas.PintType.ureg.formatter.default_format = "#D~"
-
-    path = Path(r"nirb\NIRB-TH.mph")
-    export_folder = Path(r"C:\Users\tsi-lokal\Documents\MPH-PY\MPh\nirb\Exports")
+    ROOT = Path().cwd()
+    path = ROOT / "NIRB" / "NIRB-TH.mph"
+    export_folder = ROOT / "NIRB" / "Exports"
     assert export_folder.exists()
     client = mph.start(version='6.2')
     model = client.load(path)
-    t_end = 4e13
+    t_end = 3.5e13
     model.parameter('t_end', f'{t_end:.2e}[s]')
+    
+    # Optional, enable java logger
     # client.java.showProgress(str(Path(__file__).parent.joinpath('my_comsol.log').absolute()))
 
-    time_steps = np.arange(0, t_end + 1, 1e12)
     study1 = (model / 'studies' / 'Study 1' / 'Time Dependent')
+    time_steps = np.arange(0, t_end + 1, 1e12)
     study1.property('tlist', time_steps)
 
-    training_param = pd.read_csv(r"nirb\test_samples.csv", header=[0, 1])
+    training_param = pd.read_csv( ROOT / "NIRB" / "training_samples.csv", header=[0, 1])
     training_param : pd.DataFrame = training_param.pint.quantify(level = -1)
-    # units = [format_unit_simple(training_param[col].pint.units) for col in training_param.columns]
-    for idx, row in training_param.iterrows():
+    for idx, row in training_param[23:].iterrows():
         logging.info(f'Iteration: {idx=:03d}')
         export_file = export_folder.joinpath(f'Training_{idx:03d}.vtu')
 
         for col in training_param.columns:
+            # Overwrite value - unit pairs in COMSOL Model.
+            assert col in model.parameters().keys(), f"{col} not defined in mph-Model!"
             quantity = row[col]
             magnitude = quantity.magnitude
             unit = format_comsol_unit(str(quantity.units))
@@ -58,17 +78,38 @@ def training_loop():
         model.mesh()
         start_time = time.time()
         logging.info('\tSolving...')
+        
+        # if row["fault_k_long"].magnitude > 5e-13:
+        #     logging.warning(f"Iteration {idx:03d} exceeds threshold for permeability!")
+        #     t_end_reduced = 1e12
+        #     logging.info(f"Continuing with {t_end_reduced=:.2e}")
+        #     model.parameter('t_end', f'{t_end_reduced:.2e}[s]')
+        #     time_steps = np.arange(0, t_end_reduced + 1, 1e11) #1e12)
+        #     study1.property('tlist', time_steps)
+        # else:
+        time_steps = np.arange(0, t_end + 1, 1e12)
+        study1.property('tlist', time_steps)
+            
         model.solve()
-        end_time = time.time() - start_time
+        
+        # if row["fault_k_long"].magnitude > 5e-13:
+        #     model.save(f"{path.stem}_{idx:03d}.mph")
+        
+        sim_time = time.time() - start_time
+        logging.debug(f"Sim took {sim_time} s.")
         model.export('Data 1', f'{export_file}')
         logging.info('\tExport sucessfull')
+        
+        # Read export file and add meta data
         mesh = pv.read(export_file)
-        mesh.field_data['SimTime'] = end_time
+        mesh.field_data['SimTime'] = sim_time
         mesh.field_data['Parameters'] = model.parameters()
-        mesh.save(export_file)
+        mesh.field_data['Idx'] = idx
+        mesh.save(export_file) # Binary XML
         del mesh
         logging.info('\tAdded Meta Data for Mesh')
 
 
 if __name__ == "__main__":
+    setup_logger(is_console=False)
     training_loop()

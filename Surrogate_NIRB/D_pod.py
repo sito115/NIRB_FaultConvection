@@ -10,15 +10,13 @@ class POD:
     """This class contains all algorithms for the proper orthogonal
        decomposition (POD)."""
        
-    POD_snapshots      : np.ndarray 
+    POD_snapshots : np.ndarray 
     
     def perform_POD(self, accuracy: float = 1e-3) -> None:
-        """ Performs the POD for the parameters. This POD algorithm should be
-            used for time-independent (steady-state) applications
+        """
 
         Args:
-        n_variables = number of variables for which the POD needs to be performed
-        threshold_percent = vector of dimension of the number of variables that
+        accuracy = vector of dimension of the number of variables that
                             defines the desired accuracy
 
         Returns:
@@ -29,7 +27,7 @@ class POD:
         svd = np.linalg.svd(self.POD_snapshots,  full_matrices=False)
         explained_variance  = (svd[1] ** 2) / np.sum(svd[1]**2)
         cumulative_variance = np.cumsum(explained_variance)
-        num_components      = np.searchsorted(cumulative_variance, 1 - accuracy) + 1 # +1 to be greater than threshold
+        num_components      = np.searchsorted(cumulative_variance, 1 - accuracy) + 1 # +1 to be greater than threshold/accuracy
         information_content = explained_variance[:num_components]
         
         self.information_content = np.copy(information_content)
@@ -43,12 +41,7 @@ if __name__ == "__main__":
     ACCURACY = 1e-3
     temperatures = np.load(ROOT / "Snapshots" / VERSION / "Exports" / f"{DATA_TYPE}_temperatures.npy")
     
-    if VERSION == "02":
-        for idx in [41, 62, 87]:
-            temperatures[idx, -1, :] = temperatures[idx, 10, :]
     data_set = temperatures[:, -1, :] # last time step
-    
-    
     data_set_scaled = min_max_scaler(data_set)
     
     pod = POD(POD_snapshots=data_set_scaled)

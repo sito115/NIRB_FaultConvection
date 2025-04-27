@@ -3,20 +3,10 @@ import numpy as np
 import pandas as pd
 from pyDOE import lhs
 from dataclasses import dataclass
-import enum
 from typing import List
-from scipy.stats.distributions import norm
 import random
 import pint_pandas
 import pint
-from pint.delegates.formatter._format_helpers import formatter
-
-# ureg = pint.UnitRegistry()
-# Create a custom Unit class that overrides the default string representation
-# @pint.register_unit_format("COMSOL")
-# def format_unit_simple(unit, registry, **options):
-#     return " * ".join(f"{u} ** {p}" for u, p in unit.items())
-
 
 @dataclass
 class Parameter:
@@ -25,7 +15,15 @@ class Parameter:
     unit : str = None
     is_log: bool = False
 
-    def scale_from_lhs(self, lhs_samples):
+    def scale_from_lhs(self, lhs_samples: np.ndarray) -> np.ndarray:
+        """Scale values from lhs (between 0 and 1) to parameter ranges.
+
+        Args:
+            lhs_samples (np.ndarray): 
+
+        Returns:
+            _type_: scaled samples
+        """        
         assert self.param_range[0] < self.param_range[1], (
             f"{self.name}: Range should be in ascending order"
         )
@@ -67,7 +65,7 @@ def main():
 
     units_dict = {param.name: f'pint[{param.unit}]' for param in parameters}
     
-    ### TRAINING SAMPLES
+    ### GENERATE TRAINING SAMPLES (LHS)
     lhd = lhs(len(parameters), samples=N_TRAINING, criterion="center")
     print(lhd)
 
@@ -82,8 +80,6 @@ def main():
         print(f"{param.name}: {means[i]}")
         print(f"{param.name}: {np.mean(np.log10(lhd_scaled[:, i]))}")
 
-    
-
     df_traing = pd.DataFrame(lhd_scaled, columns=[param.name for param in parameters])
     df_traing = df_traing.astype(units_dict)
     
@@ -92,7 +88,7 @@ def main():
     df_traing.to_csv(ROOT / "training_samples.csv", index=False)
     print(df_traing)
 
-    ### TEST SAMPLES
+    ### GENERATE TEST SAMPLES (RANDOM)
     random.seed(42)
     random_samples = np.random.rand(N_TEST, len(parameters))
     random_samples_scaled = np.array(

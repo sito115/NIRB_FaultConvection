@@ -111,27 +111,5 @@ def main():
         np.save(export_folder / f"{data_type}_temperatures_diff.npy", temperatures_diff )
 
 
-def reduce_to_binary():
-    ROOT = Path(__file__).parent.parent
-    VERSION = "01"
-    data_type = "Test"
-    data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
-    
-    assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    export_folder =  data_folder.parent / "Truncated"
-    assert export_folder.exists(), f"Export folder {export_folder} does not exist."
-    vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
-    for idx, vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
-        temp_data = COMSOL_VTU(vtu_file)
-        fields_2_delete = temp_data.exported_fields
-        fields_2_delete.remove("Temperature")
-        for field in fields_2_delete:
-            temp_data.delete_field(field)
-        temp_data.mesh.save(export_folder / vtu_file.name)
-    
-
-
-
 if __name__ == "__main__":
-    reduce_to_binary()
     main()

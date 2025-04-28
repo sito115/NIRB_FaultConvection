@@ -3,14 +3,16 @@ from helpers import load_pint_data
 import lightning as L
 from pathlib import Path
 from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.callbacks import ModelCheckpoint, EarlyStopping
 import optuna
 from torch import nn
 from torchinfo import summary
 from optuna.trial import TrialState
 import numpy as np
-from lightning.pytorch.callbacks import EarlyStopping
+from optuna_dashboard import run_server
+from helpers import MyEarlyStopping
 
-def objective(trial):
+def objective(trial: optuna.trial.Trial):
     # Architecture: variable number of layers and neurons per layer
     # num_layers = trial.suggest_int("num_layers", 2, 5)
     # hidden_layers = [
@@ -18,22 +20,24 @@ def objective(trial):
     #     for i in range(num_layers)
     # ]
     
-    # hidden3 = trial.suggest_categorical("hiden3", [32, 64, 128])
-    hidden4 = trial.suggest_categorical("hiden4", [64, 128])
-    # hidden5 = trial.suggest_categorical("hiden5", [32, 64, 128])
-    # hidden6 = trial.suggest_categorical("hiden6", [16, 32, 64])
+    hidden1 = trial.suggest_int("hiden1", low = 6, high = 9)
+    hidden2 = trial.suggest_int("hiden2", low = 16,  high = 64 ,step=4)
+    hidden3 = trial.suggest_int("hiden3", low = 32,  high = 128 ,step=8)
+    hidden4 = trial.suggest_int("hiden4", low = 32,  high = 128 ,step=8)
+    hidden5 = trial.suggest_int("hiden5", low = 32,  high = 128 ,step=8)
+    hidden6 = trial.suggest_int("hiden6", low = 16,  high = 50 ,step=2)
     
     # hidden_layers = [8, 16] + [hidden3, hidden4, hidden5, hidden6]
 
     ROOT = Path("/Users/thomassimader/Documents/NIRB/Snapshots/01")
-    N_EPOCHS = 10_000
+    N_EPOCHS = 20_000
     
     # Other hyperparameters
-    lr = trial.suggest_loguniform("lr", 1e-5, 5e-2)
+    lr = trial.suggest_loguniform("lr", 5e-5, 5e-2)
     
     param_path = ROOT / "training_samples.csv"
     basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
-    snapshots_path = ROOT / "Exports" / "temperatures.npy"
+    snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
     assert param_path.exists(), f"Does not exit: {param_path}"
     assert basis_func_path.exists(), f"Does not exit: {basis_func_path}"
     assert snapshots_path.exists(),f"Does not exit: {snapshots_path}"
@@ -82,7 +86,7 @@ def objective(trial):
     n_outputs = basis_functions.shape[0]
     
     
-    model = NirbModule(n_inputs, [8, 16, 32, hidden4, 32],
+    model = NirbModule(n_inputs, [hidden1, hidden2, hidden3, hidden4, hidden5, hidden6],
                        n_outputs,
                        activation=activation_fn,
                        learning_rate=lr)
@@ -94,24 +98,31 @@ def objective(trial):
                        "num_params"],)
             
     early_stop = EarlyStopping(
+        divergence_threshold=20.,
+        # min_epochs=int(10_000),
         monitor="train_loss",        # or "val_loss"
-        stopping_threshold=1e-8,      # 💥 stop when loss drops below this
-        divergence_threshold=10_000,
         mode="min",                  # we're minimizing loss
-        verbose=True,
-        patience=10_000,
-        check_on_train_epoch_end=True
+        # check_on_train_epoch_end=True
         )
     
-    logger = TensorBoardLogger(ROOT, name="nn_logs_opti_new")
+    
+    # # Define a unique checkpoint directory for each trial
+    # checkpoint_callback = ModelCheckpoint(
+    #     dirpath= ROOT / "Optuna" / f'trial_{trial.number}',  # Unique directory per trial
+    #     monitor='train_loss',  # The metric you are monitoring
+    #     mode='min',  # Assuming you want to minimize the metric (e.g., loss)
+    #     save_weights_only=True,  # Save only model weights
+    # )
+    
+    logger = TensorBoardLogger(ROOT / "Optuna_Logs", name=f"trial_{trial.number}")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        logger=logger,
-                        log_every_n_steps=100,  # Reduce logging frequency
+                        min_epochs=5000,
+                        logger=logger, #logger,
+                        # log_every_n_steps=100,  # Reduce logging frequency
                         # enable_checkpointing=True,
                         callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
-                        # precision=16,
-                        # max_time={"days": 0, "hours": 0, "minutes": 25},
                         # strategy='ddp',
+                        enable_checkpointing = True,
                         enable_progress_bar=False,
                         profiler="simple",
                         # devices=3,
@@ -126,8 +137,14 @@ def objective(trial):
 
 if __name__ == "__main__":
     
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=50)
+    # storage = optuna.storages.InMemoryStorage()
+    storage_param = {
+        "storage":"sqlite:///db.sqlite3",  # Specify the storage URL here.
+        "study_name": "optuna_sweep",
+        "load_if_exists": True
+    }
+    study = optuna.create_study(direction="minimize", **storage_param)
+    study.optimize(objective, n_trials=100, n_jobs=3)
 
     print("Best hyperparameters:")
     print(study.best_params)

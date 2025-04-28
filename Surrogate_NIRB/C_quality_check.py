@@ -43,12 +43,13 @@ def main():
     IS_EXPORT_DF = False
     
     ROOT = Path(__file__).parent.parent
-    VERSION = "02"
+    PARAMETER_SPACE = "01"
     data_type = "Test"
-    data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
+    # data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
+    data_folder = Path(ROOT / "Snapshots" / PARAMETER_SPACE / "Truncated") # data_type)
     
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    export_folder =  data_folder.parent / "Exports"
+    export_folder =  data_folder.parent / "Truncated" #"Exports"
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
   
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
@@ -98,7 +99,7 @@ def main():
                 df.index = df.index.astype(str)
                 df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
             
-        if IS_EXPORT_MINMAX_TEMP: # min max temperatures
+        if IS_EXPORT_MINMAX_TEMP: # min max temperatures differences to initial state (pure conduction)
             temp_array = comsol_data.get_array('Temperature')
             temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
             time_len = temp_array.shape[0]

@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path
 import pandas as pd
+import pint_pandas  # noqa: F401
 import pint
 from typing import List
 import pyvista as pv
@@ -54,7 +55,7 @@ def safe_parse_quantity(s, ureg: pint.UnitRegistry = pint.UnitRegistry()):
         return np.nan
 
 
-def load_pint_data(path: Path, **kwargs) -> pd.DataFrame:
+def load_pint_data(path: Path, is_numpy = False, **kwargs) -> pd.DataFrame:
     """Load csv that has parameter names in the first row and units in the second row.
 
     Args:
@@ -67,7 +68,6 @@ def load_pint_data(path: Path, **kwargs) -> pd.DataFrame:
     level = kwargs.pop("level", -1)
     training_param = pd.read_csv(path, header=header)
     training_param =  training_param.pint.quantify(level = level)
-    is_numpy = kwargs.pop("is_numpy", False)
     if is_numpy:
         return training_param.pint.dequantify().to_numpy()
     return training_param

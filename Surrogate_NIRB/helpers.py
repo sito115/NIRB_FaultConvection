@@ -1,13 +1,16 @@
 import numpy as np
+import optuna
 from pathlib import Path
 import pandas as pd
 import pint_pandas  # noqa: F401
 import pint
 from typing import List
 import pyvista as pv
-from lightning.pytorch.callbacks import EarlyStopping
+import lightning as L
+import warnings
 import vtk
 import sys
+from sklearn.metrics import mean_squared_error
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from ComsolClasses.comsol_classes import COMSOL_VTU
 
@@ -73,33 +76,76 @@ def load_pint_data(path: Path, is_numpy = False, **kwargs) -> pd.DataFrame:
     return training_param
         
 def standardize(array: np.ndarray, mean:np.ndarray, var:np.ndarray) -> np.ndarray:
+    """This function subtracts the mean and divides by the square root of the variance
+    for each element, effectively transforming the input to have zero mean and unit variance.
+
+    Args:
+        array (np.ndarray): _description_
+        mean (np.ndarray): _description_
+        var (np.ndarray): _description_
+
+    Returns:
+        np.ndarray: _description_
+    """    
+    
     return (array - mean)/np.sqrt(var)
 
+
+def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
+    """Compute the Mean Squared Error (MSE) between predictions and targets.
+
+    Args:
+        predictions (np.ndarray): _description_
+        targets (np.ndarray): _description_
+
+    Returns:
+        float: _description_
+    """    
+    return np.mean((predictions - targets)**2)    
     
     
+class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
     
-class MyEarlyStopping(EarlyStopping):
-    
-    def __init__(self, termination_threshold=5.0, min_epochs=5000, **kwargs):
+    def __init__(self,
+                 trial: optuna.Trial,
+                 termination_threshold=5.0,
+                 min_epochs=5000,
+                 **kwargs):
         super().__init__(**kwargs)
         self.termination_threshold = termination_threshold
         self.min_epochs = min_epochs
+        self._trial = trial
     
-    def on_train_end(self, trainer, pl_module):
-        # Check only at the end of training
-        current = trainer.callback_metrics.get(self.monitor)
-        if current is None:
-            print(f"Warning: {self.monitor} not found in metrics.")
+    
+    def _process(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        
+        current_epoch = pl_module.current_epoch
+        current_score = trainer.callback_metrics.get(self.monitor)
+        if current_score is None:
+            message = (
+                "The metric '{}' is not in the evaluation logs for pruning. "
+                "Please make sure you set the correct metric name.".format(self.monitor)
+            )
+            warnings.warn(message)
             return
         
-        current_epoch = trainer.current_epoch
-        
-        if current_epoch >= self.min_epochs and current > self.termination_threshold:
-            print(f"Early Stopping: train_loss = {current:.4e} after {current_epoch} epochs (> {self.termination_threshold})")
-            trainer.should_stop = True
-        else:
-            print(f"Training completed normally. train_loss = {current:.4e} after {current_epoch} epochs.")
+        self._trial.report(current_score, step=current_epoch)
+        if self._trial.should_prune():
+            message = "Trial was pruned at epoch {}.".format(current_epoch)
+            raise optuna.TrialPruned(message)    
     
+    
+    def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
+        # Check only at the end of training
+        return self._process(trainer, pl_module)
+
+
+    def on_validation_end(self, trainer, pl_module):
+        # override this to disable early stopping at the end of val loop
+        pass    
+
+
+
 
 def delete_pyvista_fields(comsol_data : COMSOL_VTU,
                      fields_2_keep : List[str] = "Temperature") -> COMSOL_VTU:
@@ -138,7 +184,34 @@ def map_on_control_mesh(comsol_data : pv.PolyData,
     interpolated = probe.GetOutput()
     return pv.wrap(interpolated)
         
-    
+
+def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> float:
+    """Test
+
+    Args:
+        test_snapshots (np.ndarray): _description_
+        test_predictions (np.ndarray): _description_
+
+    Returns:
+        float: _description_
+    """
+    Q2 = mean_squared_error(test_snapshots, test_predictions, multioutput='raw_values')  
+    toReturnQ2 = np.average(Q2)*(-1)  # TODO: why mutliplied with - 1 in source code? 
+    return toReturnQ2
+
+def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarray) -> float:
+    """ Training
+
+    Args:
+        training_snapshots (np.ndarray): _description_
+        training_predictions (np.ndarray): _description_
+
+    Returns:
+        float: _description_
+    """
+    R2 = mean_squared_error(training_snapshots, training_predictions, multioutput='raw_values')  
+    toShowR2 = np.average(R2)
+    return toShowR2
+
 if __name__ == "__main__":
-    param_path = Path("Surrogate_NIRB/test_samples.csv")
-    load_pint_data(param_path)
+    pass

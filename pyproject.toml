@@ -26,6 +26,7 @@ plotting = [
     "trame-vuetify>=3.0.0",
     "matplotlib>=3.10.1",
     "imageio[ffmpeg]>=2.37.0", # for mp4 export
+    "kaleido",
 ]
 jupyter = [
     "jupyterlab>=4.4.0",
@@ -36,4 +37,13 @@ jupyter = [
 ]
 
 [dependency-groups]
-dev = ["vtk>=9.3.1", "autopep8>=2.3.2"]
+dev = [
+    "vtk>=9.3.1",
+    "autopep8>=2.3.2",
+    "tensorboard>=2.19.0",
+    "torchinfo>=1.8.0",
+    "optuna>=4.3.0",
+    "optuna-dashboard>=0.18.0",
+    "optuna-fast-fanova>=0.0.4",
+    "gunicorn>=23.0.0",
+]

@@ -4,6 +4,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from ComsolClasses.comsol_classes import COMSOL_VTU
 from ComsolClasses.helper import calculate_normal
+from helpers import load_pint_data
 from pint import UnitRegistry, Quantity
 import ast
 import numpy as np
@@ -36,23 +37,27 @@ def main():
     """Extract "EXPORT_FIELD" from  multiple vtu-Files and save it as npy-File.
     Optionally create mp4 movies of simulations. 
     """    
-    IS_EXPORT_MP4 = False
+    IS_EXPORT_MP4 = True
     EXPORT_FIELD = "Temperature"
-    IS_EXPORT_MINMAX_TEMP = True
-    IS_EXPORT_NPY = True
+    IS_EXPORT_MINMAX_TEMP = False
+    IS_EXPORT_NPY = False
     IS_EXPORT_DF = False
     
     ROOT = Path(__file__).parent.parent
     PARAMETER_SPACE = "01"
-    data_type = "Test"
+    data_type = "Training"
     # data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
-    data_folder = Path(ROOT / "Snapshots" / PARAMETER_SPACE / "Truncated") # data_type)
+    data_folder = Path(ROOT / "Snapshots" / PARAMETER_SPACE / data_type) #"Truncated") # data_type)
+    
+    pint_parameters_df = load_pint_data(ROOT /  "Snapshots" / PARAMETER_SPACE / f"{data_type.lower()}_samples.csv")
     
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    export_folder =  data_folder.parent / "Truncated" #"Exports"
+    # export_folder =  data_folder.parent / "Truncated" #"Exports"
+    export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
   
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
+
     
     # extract time steps and points from first simulation
     N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
@@ -61,7 +66,12 @@ def main():
     temperatures_diff = np.zeros_like(temperatures)
     sim_times = np.zeros((len(vtu_files), ))
     
-    for idx, vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
+    indices = [33, 37, 41, 45, 48, 49, 50, 52, 53] # PS01
+    # indices = [11, 77, 27, 35, 68, 92, 6, 85, 36, 99, 93] # PS02
+    vtu_files = [vtu_files[i] for i in indices]
+    # for idx, vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
+    for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
+        idx = int(vtu_file.stem.split("_")[1])
         comsol_data = COMSOL_VTU(vtu_file)
         sim_time = comsol_data.mesh.field_data['SimTime'][0]
         sim_times[idx] = sim_time
@@ -72,6 +82,8 @@ def main():
             parameters_pint[key] = convert_str_to_pint(value)
         comsol_data.parameters = parameters_pint
         
+        
+        
         dip = parameters_pint['dip'].to('degree').magnitude
         strike = parameters_pint['strike'].to('degree').magnitude
         t_c = parameters_pint['T_c'].to('K').magnitude
@@ -79,16 +91,18 @@ def main():
         t_grad = (t_h - t_c) / parameters_pint['H'].to('m').magnitude
 
         if IS_EXPORT_MP4:
+            param_string =  "\n".join([f"{col} = {para.magnitude:.2e} {para.units:~P}" for col, para in pint_parameters_df.loc[idx].items()])
             normal = calculate_normal(dip, strike)
             kwargs={'normal' : -np.array(normal),
                 'origin' : comsol_data.mesh.center,
                 'movie_field' : EXPORT_FIELD + "-T0",
-                'is_diff' : False,
+                'is_diff' : True,
                 'is_ind_cmap':True,
+                'param_string' : param_string,
                 't_grad': {'t0': t_c,
                           't_grad': t_grad}}
             comsol_data.export_mp4_movie(field='Temperature',
-                                        mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}_Tot.mp4",
+                                        mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}_diff_{kwargs['is_diff']:d}.mp4",
                                         **kwargs)
             
             if IS_EXPORT_DF:

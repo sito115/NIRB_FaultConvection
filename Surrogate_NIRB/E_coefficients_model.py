@@ -3,15 +3,14 @@ import torch
 from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
 from torchinfo import summary
+from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch import seed_everything
 import numpy as np
 from torchmetrics import MeanAbsoluteError
-from Surrogate_NIRB.D_pod import ACCURACY
-from helpers import load_pint_data, min_max_scaler, standardize
+from helpers import load_pint_data, min_max_scaler, standardize, R2_metric, Q2_metric
 from pathlib import Path
 from typing import List
-
 
 
 class NIRB_NN(nn.Module):
@@ -76,36 +75,34 @@ class NirbDataModule():
     def compute_coefficients(self) -> None:
         """Calculcates the coefficients (output of NN) for training and test.
         """        
-        self.training_param = standardize(self.training_param, self.mean, self.var)
-        self.training_snaps = min_max_scaler(self.training_snaps)
-        self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps.T)
+        self.training_param_scaled = standardize(self.training_param, self.mean, self.var)
+        self.training_snaps_scaled = min_max_scaler(self.training_snaps)
+        self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps_scaled.T).T
         if self.test_param is not None:
-            self.test_param = standardize(self.test_param, self.mean, self.var)
+            self.test_param_scaled = standardize(self.test_param, self.mean, self.var)
         if self.test_snaps is not None:
-            self.test_snaps = min_max_scaler(self.test_snaps)
-            self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps.T)
+            self.test_snaps_scaled = min_max_scaler(self.test_snaps)
+            self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
 
     def setup(self) -> None:
         """Generates TensorDatasets for Training and Test.
         """        
-        self.dataset_train = TensorDataset(torch.from_numpy(self.training_param.astype(np.float32)),
-                                            torch.from_numpy(self.training_coeff.T.astype(np.float32)))
+        self.dataset_train = TensorDataset(torch.from_numpy(self.training_param_scaled.astype(np.float32)),
+                                           torch.from_numpy(self.training_coeff.astype(np.float32)))
             
         if self.test_snaps is not None:
-            self.dataset_test = TensorDataset(torch.from_numpy(self.test_param.astype(np.float32)),
-                                              torch.from_numpy(self.test_coeff.T.astype(np.float32)))
+            self.dataset_test = TensorDataset(torch.from_numpy(self.test_param_scaled.astype(np.float32)),
+                                              torch.from_numpy(self.test_coeff.astype(np.float32)))
             
 
     def train_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_train,
                           batch_size=self.batch_size,
-                          shuffle=True,
                           *kwargs)
 
     def test_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_test,
-                          batch_size=self.batch_size,
-                          shuffle=True,
+                          batch_size=len(self.dataset_test),  # All in one batch
                           *kwargs)
 
 
@@ -125,6 +122,7 @@ class NirbModule(L.LightningModule):
         
         self.msa_metric = MeanAbsoluteError()
         self.save_hyperparameters()
+        self.test_snaps_scaled : np.ndarray = None
         
     def forward(self, x):
         return self.model(x)
@@ -137,7 +135,7 @@ class NirbModule(L.LightningModule):
         y_hat = self.forward(x)
         loss = self.loss(y_hat, y)  # loss(input, target)
         metrics = {"train_loss": loss,
-                   "train_msa" : self.msa_metric(y_hat, y),
+                #    "train_msa" : self.msa_metric(y_hat, y),
                    }
         self.log_dict(metrics, 
                       prog_bar=True,
@@ -146,18 +144,61 @@ class NirbModule(L.LightningModule):
                       sync_dist=True)
         return loss
     
+    
     def test_step(self, test_batch, batch_idx):
         x, y = test_batch
         y_hat = self.forward(x)
         loss = self.loss(y_hat, y)
+        
         metrics = {"test_loss": loss,
                    "test_msa" : self.msa_metric(y_hat, y),
                     }
+        
+        if self.test_snaps_scaled is not None:
+            full_solution_test = np.matmul(y_hat.detach().numpy(), basis_functions)
+            q2_metric = Q2_metric(self.test_snaps_scaled, full_solution_test)
+            metrics["Q2"] = q2_metric
+        
         self.log_dict(metrics)
 
         
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         return self(batch)
+
+
+class ComputeR2OnTrainEnd(Callback):
+    """
+    Callback to compute and log the R2 score on the training set at the end of training.
+
+    Args:
+        - train_parameters_scaled (np.ndarray): 
+        - train_snapshots_scaled (np.ndarray): 
+        - basis_func_mtrx (np.ndarray): 
+
+    Methods:
+        on_train_end(trainer, pl_module): 
+            Called at the end of training. Evaluates the model on the training data,
+            reconstructs the full field using the basis matrix, computes the R2 metric,
+            and logs it using the Lightning's logger.
+    """
+    def __init__(self,
+                 train_parameters_scaled : np.ndarray,
+                 train_snapshots_scaled : np.ndarray,
+                 basis_func_mtrx: np.ndarray):
+        super().__init__()
+        
+        self.train_parameters_scaled = torch.from_numpy(train_parameters_scaled.astype(np.float32)) 
+        self.train_snapshots_scaled = train_snapshots_scaled 
+        self.basis_func_mtrx = basis_func_mtrx
+        
+    def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
+        pl_module.eval()
+        with torch.no_grad():
+            y_hat = pl_module(self.train_parameters_scaled)
+            
+        full_solution_train = np.matmul(y_hat.detach().numpy(), self.basis_func_mtrx)
+        r2_metric = R2_metric(full_solution_train, self.train_snapshots_scaled)
+        pl_module.logger.experiment.add_scalar("R2", r2_metric, global_step=trainer.current_epoch)
 
 
 
@@ -166,17 +207,15 @@ if __name__ == "__main__":
     ACCURACY = 1e-3
     BATCH_SIZE = 20
     LR = 1e-4 # 0.008656381123933186 # Trial 93
-    N_EPOCHS = 400_000
+    N_EPOCHS = 100
     ROOT = Path(__file__).parent.parent / "Snapshots" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     
-
     basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy"
     train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "Truncated" / "Test_temperatures.npy"
+    test_snapshots_path = ROOT / "Test" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-    
     
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(train_snapshots_path)
@@ -186,12 +225,9 @@ if __name__ == "__main__":
     
     # Prepare data
     training_snapshots = training_snapshots[:, -1, :] # last time step
-    training_parameters = training_parameters[:, 2:] 
     test_snapshots = test_snapshots[:, -1, :] # last time step
-    test_parameters = test_parameters[:, 2:] 
      
-     
-    dm = NirbDataModule(
+    data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
         training_snaps=training_snapshots,
         training_param=training_parameters,
@@ -209,28 +245,34 @@ if __name__ == "__main__":
                        activation=nn.Sigmoid(),
                        learning_rate=LR)
     
-    summary(model.model, 
-            input_size=training_parameters.shape,
-            col_names=["input_size",
-                       "output_size",
-                       "num_params"],)
+    # summary(model.model, 
+    #         input_size=training_parameters.shape,
+    #         col_names=["input_size",
+    #                    "output_size",
+    #                    "num_params"],)
 
+    r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
+                                      data_module.training_snaps_scaled,
+                                      data_module.basis_func_mtrx)
 
     logger = TensorBoardLogger(ROOT, name="nn_logs")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        logger=logger,
+                        logger=None,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
+                        callbacks=[r2_callback],
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=5,
+                        devices=1,
                         accelerator= "cpu" #'mps',
                         )
     
 
-    ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_41/checkpoints/epoch=199999-step=200000.ckpt"
+    # ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_41/checkpoints/epoch=199999-step=200000.ckpt"
     trainer.fit(model=model,
-                train_dataloaders=dm.train_dataloader(),
-                ckpt_path = ckpt_path)
-    trainer.test(model=model,
-                 dataloaders=dm.test_dataloader())
+                train_dataloaders=data_module.train_dataloader(),
+                ckpt_path = None)
+    model.test_snaps_scaled = data_module.test_snaps_scaled
+    results = trainer.test(model=model,
+                 dataloaders=data_module.test_dataloader())
+    print(results)

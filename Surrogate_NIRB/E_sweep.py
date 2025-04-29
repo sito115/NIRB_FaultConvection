@@ -1,4 +1,4 @@
-from E_coefficients_model import NirbModule, NirbDataModule
+from E_coefficients_model import NirbModule, NirbDataModule, ComputeR2OnTrainEnd
 from helpers import load_pint_data
 import lightning as L
 from pathlib import Path
@@ -13,38 +13,31 @@ from helpers import MyEarlyStopping
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
-    # num_layers = trial.suggest_int("num_layers", 2, 5)
-    # hidden_layers = [
-    #     trial.suggest_categorical(f"n_units_l{i}", [16, 32, 64, 128])
-    #     for i in range(num_layers)
-    # ]
+    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 5)
+    hidden_layers_betw = [
+        trial.suggest_int(f"hidden_layers_betw{i}", 10, 300, step=5)
+        for i in range(num_inbetw_layers)
+    ]
     
-    hidden1 = trial.suggest_int("hiden1", low = 6, high = 15)
-    hidden2 = trial.suggest_int("hiden2", low = 16,  high = 64 ,step=4)
-    hidden3 = trial.suggest_int("hiden3", low = 32,  high = 128 ,step=8)
-    hidden4 = trial.suggest_int("hiden4", low = 32,  high = 128 ,step=8)
+    hidden1 = trial.suggest_int("hiden1", low = 5, high = 20)
+    # hidden2 = trial.suggest_int("hiden2", low = 16,  high = 64 ,step=4)
+    # hidden3 = trial.suggest_int("hiden3", low = 32,  high = 128 ,step=8)
+    # hidden4 = trial.suggest_int("hiden4", low = 32,  high = 128 ,step=8)
     
-    is_hidden5 = trial.suggest_categorical("is_hidden5", [True, False])
-    if is_hidden5:
-        hidden5 = trial.suggest_int("hiden5", low = 32,  high = 128 ,step=8)
-    hidden6 = trial.suggest_int("hiden6", low = 16,  high = 64 ,step=2)
+    # is_hidden5 = trial.suggest_categorical("is_hidden5", [True, False])
+    # if is_hidden5:
+    #     hidden5 = trial.suggest_int("hiden5", low = 32,  high = 128 ,step=8)
+    hidden6 = trial.suggest_int("hiden6", low = 10,  high = 64 ,step=2)
     
     # hidden_layers = [8, 16] + [hidden3, hidden4, hidden5, hidden6]
 
     ROOT = Path("/Users/thomassimader/Documents/NIRB/Snapshots/01")
     N_EPOCHS = 25_000
+    ACCURACY = 1e-3
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 1e-5, 2.5e-3, log=True)
-    
-    param_path = ROOT / "training_samples.csv"
-    basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
-    snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
-    assert param_path.exists(), f"Does not exit: {param_path}"
-    assert basis_func_path.exists(), f"Does not exit: {basis_func_path}"
-    assert snapshots_path.exists(),f"Does not exit: {snapshots_path}"
-    
-    batch_size = trial.suggest_categorical("batch_size", [10, 20, 25])
+    batch_size = trial.suggest_int("batch_size", 10, 25)
 
     activation_name =  "sigmoid" #  trial.suggest_categorical("activation", ["relu", "sigmoid"])
     if activation_name == "relu":
@@ -55,11 +48,9 @@ def objective(trial: optuna.Trial) -> float:
 
     ROOT = Path(__file__).parent.parent / "Snapshots" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
-    
-
-    basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
+    basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy"
     train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "Truncated" / "Test_temperatures.npy"
+    test_snapshots_path = ROOT / "Test" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
     
@@ -72,12 +63,9 @@ def objective(trial: optuna.Trial) -> float:
     
     # Prepare data
     training_snapshots = training_snapshots[:, -1, :] # last time step
-    training_parameters = training_parameters[:, 2:] 
     test_snapshots = test_snapshots[:, -1, :] # last time step
-    test_parameters = test_parameters[:, 2:] 
-     
-     
-    dm = NirbDataModule(
+
+    data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
         training_snaps=training_snapshots,
         training_param=training_parameters,
@@ -90,13 +78,8 @@ def objective(trial: optuna.Trial) -> float:
     n_outputs = basis_functions.shape[0]
     
     
-    if is_hidden5:
-        hidden_layers = [hidden1, hidden2, hidden3, hidden4, hidden5, hidden6]
-    else:
-        hidden_layers = [hidden1, hidden2, hidden3, hidden4, hidden6]
-    
     model = NirbModule(n_inputs, 
-                       hidden_layers,
+                       [hidden1] + hidden_layers_betw + [hidden6],
                        n_outputs,
                        activation=activation_fn,
                        learning_rate=lr)
@@ -113,14 +96,17 @@ def objective(trial: optuna.Trial) -> float:
         mode="min",                  # we're minimizing loss
         )
     
+    r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
+                                      data_module.training_snaps_scaled,
+                                      data_module.basis_func_mtrx)
+
 
     logger = TensorBoardLogger(ROOT / "Optuna_Logs", name=f"trial_{trial.number}")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
                         min_epochs=5000,
                         logger=logger, #logger,
-                        # log_every_n_steps=100,  # Reduce logging frequency
                         # enable_checkpointing=True,
-                        callbacks=[early_stop], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
+                        callbacks=[early_stop, r2_callback], #, RichProgressBar(refresh_rate=BATCH_SIZE, leave=False)],
                         # strategy='ddp',
                         enable_checkpointing = True,
                         enable_progress_bar=False,
@@ -129,8 +115,9 @@ def objective(trial: optuna.Trial) -> float:
                         # accelerator= "cpu" #'mps',
                         )
 
-    trainer.fit(model, train_dataloaders=dm.train_dataloader())
-    results = trainer.test(model, dataloaders=dm.train_dataloader())
+    trainer.fit(model, train_dataloaders=data_module.train_dataloader())
+    
+    results = trainer.test(model, dataloaders=data_module.train_dataloader())
     test_loss = results[0]['test_loss']
     # return trainer.callback_metrics["train_loss"].item()
     return test_loss
@@ -144,7 +131,7 @@ if __name__ == "__main__":
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize", **storage_param)
-    study.optimize(objective, n_trials=100, n_jobs=3)
+    study.optimize(objective, n_trials=400, n_jobs=3)
 
     print("Best hyperparameters:")
     print(study.best_params)

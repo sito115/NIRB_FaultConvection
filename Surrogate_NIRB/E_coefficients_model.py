@@ -7,6 +7,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch import seed_everything
 import numpy as np
 from torchmetrics import MeanAbsoluteError
+from Surrogate_NIRB.D_pod import ACCURACY
 from helpers import load_pint_data, min_max_scaler, standardize
 from pathlib import Path
 from typing import List
@@ -162,16 +163,17 @@ class NirbModule(L.LightningModule):
 
 if __name__ == "__main__":
     seed_everything(42) 
+    ACCURACY = 1e-3
     BATCH_SIZE = 20
-    LR = 3e-3
-    N_EPOCHS = 200_000
+    LR = 1e-4 # 0.008656381123933186 # Trial 93
+    N_EPOCHS = 400_000
     ROOT = Path(__file__).parent.parent / "Snapshots" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     
 
-    basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
+    basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy"
     train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "Exports" / "Test_temperatures.npy"
+    test_snapshots_path = ROOT / "Truncated" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
     
@@ -202,7 +204,7 @@ if __name__ == "__main__":
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                       [8, 16, 32, 64, 128, 32],
+                       [6, 44, 96, 80, 34],
                        n_outputs,
                        activation=nn.Sigmoid(),
                        learning_rate=LR)
@@ -226,9 +228,9 @@ if __name__ == "__main__":
                         )
     
 
-    # ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_27/checkpoints/epoch=99999-step=200000.ckpt"
+    ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_41/checkpoints/epoch=199999-step=200000.ckpt"
     trainer.fit(model=model,
                 train_dataloaders=dm.train_dataloader(),
-                ckpt_path = None)
+                ckpt_path = ckpt_path)
     trainer.test(model=model,
                  dataloaders=dm.test_dataloader())

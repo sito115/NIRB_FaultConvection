@@ -35,12 +35,18 @@ class POD:
         logging.info(f'Selected {len(self.information_content)} basis function.')
 
 if __name__ == "__main__":
-    VERSION = "02"
+    PARAMETER_SPACE = "01"
     ROOT = Path().cwd()
-    DATA_TYPE = "Training" # "Test"
-    ACCURACY = 1e-3
-    temperatures = np.load(ROOT / "Snapshots" / VERSION / "Exports" / f"{DATA_TYPE}_temperatures.npy")
+    DATA_TYPE = "Training"
+    ACCURACY = 1e-4
+    temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
     
+    data_set = temperatures[:, -1, :] # last time step
+    
+    if PARAMETER_SPACE == "02" and DATA_TYPE == "Training":
+        for idx in [41, 62, 87]:
+            temperatures[idx, -1, :] = temperatures[idx, 10, :]
+
     data_set = temperatures[:, -1, :] # last time step
     data_set_scaled = min_max_scaler(data_set)
     
@@ -51,6 +57,6 @@ if __name__ == "__main__":
     print(np.cumsum(pod.information_content))
     print(len(pod.information_content))
     
-    np.save(ROOT / "Snapshots" / VERSION / "BasisFunctions" / "information_content.npy", pod.information_content)
-    np.save(ROOT / "Snapshots" / VERSION / "BasisFunctions" / "basis_fts_matrix.npy", pod.basis_fts_matrix)
-    np.save(ROOT / "Snapshots" / VERSION / "BasisFunctions" / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))
+    np.save(ROOT / "Snapshots" / PARAMETER_SPACE / "BasisFunctions" / f"information_content_{ACCURACY:.1e}.npy", pod.information_content)
+    np.save(ROOT / "Snapshots" / PARAMETER_SPACE / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy", pod.basis_fts_matrix)
+    np.save(ROOT / "Snapshots" / PARAMETER_SPACE / "BasisFunctions" / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))

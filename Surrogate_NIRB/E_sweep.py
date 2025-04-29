@@ -9,10 +9,9 @@ from torch import nn
 from torchinfo import summary
 from optuna.trial import TrialState
 import numpy as np
-from optuna_dashboard import run_server
 from helpers import MyEarlyStopping
 
-def objective(trial: optuna.trial.Trial):
+def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
     # num_layers = trial.suggest_int("num_layers", 2, 5)
     # hidden_layers = [
@@ -20,20 +19,23 @@ def objective(trial: optuna.trial.Trial):
     #     for i in range(num_layers)
     # ]
     
-    hidden1 = trial.suggest_int("hiden1", low = 6, high = 9)
+    hidden1 = trial.suggest_int("hiden1", low = 6, high = 15)
     hidden2 = trial.suggest_int("hiden2", low = 16,  high = 64 ,step=4)
     hidden3 = trial.suggest_int("hiden3", low = 32,  high = 128 ,step=8)
     hidden4 = trial.suggest_int("hiden4", low = 32,  high = 128 ,step=8)
-    hidden5 = trial.suggest_int("hiden5", low = 32,  high = 128 ,step=8)
-    hidden6 = trial.suggest_int("hiden6", low = 16,  high = 50 ,step=2)
+    
+    is_hidden5 = trial.suggest_categorical("is_hidden5", [True, False])
+    if is_hidden5:
+        hidden5 = trial.suggest_int("hiden5", low = 32,  high = 128 ,step=8)
+    hidden6 = trial.suggest_int("hiden6", low = 16,  high = 64 ,step=2)
     
     # hidden_layers = [8, 16] + [hidden3, hidden4, hidden5, hidden6]
 
     ROOT = Path("/Users/thomassimader/Documents/NIRB/Snapshots/01")
-    N_EPOCHS = 20_000
+    N_EPOCHS = 25_000
     
     # Other hyperparameters
-    lr = trial.suggest_loguniform("lr", 5e-5, 5e-2)
+    lr = trial.suggest_float("lr", 1e-5, 2.5e-3, log=True)
     
     param_path = ROOT / "training_samples.csv"
     basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
@@ -42,9 +44,9 @@ def objective(trial: optuna.trial.Trial):
     assert basis_func_path.exists(), f"Does not exit: {basis_func_path}"
     assert snapshots_path.exists(),f"Does not exit: {snapshots_path}"
     
-    batch_size = 20 # trial.suggest_categorical("batch_size", [16, 32, 64, 128])
+    batch_size = trial.suggest_categorical("batch_size", [10, 20, 25])
 
-    activation_name = trial.suggest_categorical("activation", ["relu", "sigmoid"])
+    activation_name =  "sigmoid" #  trial.suggest_categorical("activation", ["relu", "sigmoid"])
     if activation_name == "relu":
         activation_fn = nn.ReLU()
     elif activation_name == "sigmoid":
@@ -57,7 +59,7 @@ def objective(trial: optuna.trial.Trial):
 
     basis_func_path = ROOT / "BasisFunctions" / "basis_fts_matrix.npy"
     train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "Exports" / "Test_temperatures.npy"
+    test_snapshots_path = ROOT / "Truncated" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
     
@@ -65,20 +67,22 @@ def objective(trial: optuna.trial.Trial):
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(train_snapshots_path)
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
-    # test_snapshots          = np.load(test_snapshots_path)
-    # test_parameters         = load_pint_data(test_param_path, is_numpy = True)
+    test_snapshots          = np.load(test_snapshots_path)
+    test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
     # Prepare data
     training_snapshots = training_snapshots[:, -1, :] # last time step
     training_parameters = training_parameters[:, 2:] 
-    # test_snapshots = test_snapshots[:, -1, :] # last time step
-    # test_parameters = test_parameters[:, 2:] 
+    test_snapshots = test_snapshots[:, -1, :] # last time step
+    test_parameters = test_parameters[:, 2:] 
      
      
     dm = NirbDataModule(
         basis_func_mtrx=basis_functions,
         training_snaps=training_snapshots,
         training_param=training_parameters,
+        test_snaps=test_snapshots,
+        test_param=test_parameters,
         batch_size=batch_size,
     )
     
@@ -86,7 +90,13 @@ def objective(trial: optuna.trial.Trial):
     n_outputs = basis_functions.shape[0]
     
     
-    model = NirbModule(n_inputs, [hidden1, hidden2, hidden3, hidden4, hidden5, hidden6],
+    if is_hidden5:
+        hidden_layers = [hidden1, hidden2, hidden3, hidden4, hidden5, hidden6]
+    else:
+        hidden_layers = [hidden1, hidden2, hidden3, hidden4, hidden6]
+    
+    model = NirbModule(n_inputs, 
+                       hidden_layers,
                        n_outputs,
                        activation=activation_fn,
                        learning_rate=lr)
@@ -97,23 +107,13 @@ def objective(trial: optuna.trial.Trial):
                        "output_size",
                        "num_params"],)
             
-    early_stop = EarlyStopping(
-        divergence_threshold=20.,
-        # min_epochs=int(10_000),
+    early_stop = MyEarlyStopping(
+        trial, 
         monitor="train_loss",        # or "val_loss"
         mode="min",                  # we're minimizing loss
-        # check_on_train_epoch_end=True
         )
     
-    
-    # # Define a unique checkpoint directory for each trial
-    # checkpoint_callback = ModelCheckpoint(
-    #     dirpath= ROOT / "Optuna" / f'trial_{trial.number}',  # Unique directory per trial
-    #     monitor='train_loss',  # The metric you are monitoring
-    #     mode='min',  # Assuming you want to minimize the metric (e.g., loss)
-    #     save_weights_only=True,  # Save only model weights
-    # )
-    
+
     logger = TensorBoardLogger(ROOT / "Optuna_Logs", name=f"trial_{trial.number}")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
                         min_epochs=5000,

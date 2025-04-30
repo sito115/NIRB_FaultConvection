@@ -213,5 +213,33 @@ def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarr
     toShowR2 = np.average(R2)
     return toShowR2
 
+
+ureg = pint.UnitRegistry()
+preferred_units = {
+    ureg.Quantity(1, 'degree').dimensionality: 'degree',
+    ureg.Quantity(1, 'degC').dimensionality: 'degC',
+    ureg.Quantity(1, 'bar').dimensionality: 'bar',
+}
+
+def format_quantity(q: pint.Quantity) -> str:
+    """Display a pint.Quanitity as string in "value unit" format.
+    Additionally, preferred units are inserted for temperature, angles.
+
+    Args:
+        q (pint.Quantity): _description_
+
+    Returns:
+        str: _description_
+    """    
+    unit = preferred_units.get(q.dimensionality, q.units)
+    try:
+        q = q.to(unit)
+    except pint.errors.UndefinedUnitError:
+        pass  # Skip if conversion fails
+    return f"{q.magnitude:.2e} {q.units:~P}"
+
+
+
+
 if __name__ == "__main__":
     pass

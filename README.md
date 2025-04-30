@@ -4,12 +4,42 @@ The benchmark model from
 - Magri, F., Cacace, M., Fischer, T., Kolditz, O., Wang, W., & Watanabe, N. (2017). Thermal convection of viscous fluids in a faulted system: 3D benchmark for numerical codes. Energy Procedia, 125, 310–317. https://doi.org/10.1016/j.egypro.2017.08.204
 
 is extended to investigate the factors influencing convection-induced thermal anomalies along fault planes. The benchmark model looks like this:
-![Convection Model](Docs/Temperature_Benchmark_3D_Fault.png)
+![Convection Model](docs/Temperature_Benchmark_3D_Fault.png)
 
 
-This project aims to create a surrogate model for a 3D cube containing a fault. The simulations are exported from COMSOL and stored in the "Snapshots" folder. Each subdirectory is labeled with a number (e.g., "01"), corresponding to a specific version or parameter space, which is detailed in the respective `training_samples.csv`.
+This project aims to create a surrogate model for a 3D cube containing a fault. The simulations are exported from COMSOL and stored in the `data` folder. Each subdirectory is labeled with a number (e.g., "01"), corresponding to a specific parameter space, which is declared in the respective `training_samples.csv`.
 
-The scripts for performing NIRB can be found in the "Surrogate_Nirb" folder. Each script contains an alphabetical prefix that denotes its chronological order. In general, `*.py` files are used for calculations and computations, while `*.ipynb` files are used for quality checks and plotting.
+Each script/notebook contains an alphabetical prefix that denotes its chronological order. In general, `*.py` files are used for calculations and computations, while `*.ipynb` files are used for quality checks and plotting.
+
+````shell
+├── data
+│   ├── 01 # Parameter Space 01 
+│   ├── 02 # Parameter Space 02 
+│   └── ..
+├── docs
+├── notebooks
+│   ├── A_plot_samples.ipynb
+│   ├── C_quality_check_plots.ipynb
+│   ├── D_quality_check.ipynb
+│   ├── E_online_stage.ipynb
+├── scr
+│   ├── MPh
+│   ├── comsol_module
+│   ├── offline_stage
+│   ├── sampling
+│   └── utils
+├── scripts
+│   ├── A_sampling.py
+│   ├── B_nirb_loop.py
+│   ├── C_map_on_control_mesh.py
+│   ├── C_quality_check.py
+│   ├── D_pod.py
+│   ├── E_coefficients_model.py
+│   ├── E_sweep.py
+````
+
+
+## Overview
 
 ### A - Sampling
 This script defines the parameter space, specifying which parameters can vary in the surrogate model and their respective ranges. The samples are exported as CSV files using the `pint` package, an elegant tool for unit handling.

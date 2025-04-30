@@ -3,7 +3,7 @@ from lightning.pytorch.callbacks import Callback
 from typing import List
 from torch import nn
 import torch
-from neural_network import NIRB_NN
+from .neural_network import NIRB_NN
 from scr.utils.helpers import R2_metric, Q2_metric
 import numpy as np
 from torchmetrics import MeanAbsoluteError

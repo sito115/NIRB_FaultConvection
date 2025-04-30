@@ -7,7 +7,7 @@ from typing import List
 import pyvista as pv
 import vtk
 from sklearn.metrics import mean_squared_error
-from scr.ComsolClasses.comsol_classes import COMSOL_VTU
+from scr.comsol_module.comsol_classes import COMSOL_VTU
 
 def min_max_scaler(data: np.ndarray) -> np.ndarray:
     """Min-max scaler to scale the data between 0 and 1.

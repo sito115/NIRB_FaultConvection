@@ -2,7 +2,7 @@ import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 import logging
-from helpers import min_max_scaler
+from scr.utils import min_max_scaler
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 @dataclass
@@ -36,7 +36,7 @@ class POD:
 
 if __name__ == "__main__":
     PARAMETER_SPACE = "01"
-    ROOT = Path().cwd()
+    ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
     ACCURACY = 1e-4
     temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")

@@ -1,12 +1,10 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-classes/*
-
+*.csv
+*.png
+*.npy
+*.pkl
 # Specific Folders
 PythonSkripts/*
 # Snapshots/
@@ -16,8 +14,11 @@ PythonSkripts/*
 *.vtu
 *.yaml
 *.ckpt
+*.png
+*.csv
+*.sqlite3
 events.out*
 # Virtual environments
 .venv
-uv.lock
+*.lock
 .DS_Store

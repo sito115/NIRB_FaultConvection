@@ -1,10 +1,8 @@
 from pathlib import Path
 import pandas as pd
-import sys
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-from ComsolClasses.comsol_classes import COMSOL_VTU
-from ComsolClasses.helper import calculate_normal
-from helpers import load_pint_data, format_quantity
+from scr.comsol_module.comsol_classes import COMSOL_VTU
+from scr.comsol_module.helper import calculate_normal
+from scr.utils import load_pint_data, format_quantity
 from pint import UnitRegistry, Quantity
 import ast
 import numpy as np
@@ -55,7 +53,7 @@ def main():
     export_folder =  data_folder.parent / "Exports"
     # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
-  
+    assert str(data_folder.absolute()) != str(export_folder.absolute()), "Import and Export from same folder not allowed"
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
 
     

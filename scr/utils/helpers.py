@@ -1,18 +1,13 @@
 import numpy as np
-import optuna
 from pathlib import Path
 import pandas as pd
 import pint_pandas  # noqa: F401
 import pint
 from typing import List
 import pyvista as pv
-import lightning as L
-import warnings
 import vtk
-import sys
 from sklearn.metrics import mean_squared_error
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-from ComsolClasses.comsol_classes import COMSOL_VTU
+from scr.ComsolClasses.comsol_classes import COMSOL_VTU
 
 def min_max_scaler(data: np.ndarray) -> np.ndarray:
     """Min-max scaler to scale the data between 0 and 1.
@@ -104,48 +99,6 @@ def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     return np.mean((predictions - targets)**2)    
     
     
-class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
-    
-    def __init__(self,
-                 trial: optuna.Trial,
-                 termination_threshold=5.0,
-                 min_epochs=5000,
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.termination_threshold = termination_threshold
-        self.min_epochs = min_epochs
-        self._trial = trial
-    
-    
-    def _process(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        
-        current_epoch = pl_module.current_epoch
-        current_score = trainer.callback_metrics.get(self.monitor)
-        if current_score is None:
-            message = (
-                "The metric '{}' is not in the evaluation logs for pruning. "
-                "Please make sure you set the correct metric name.".format(self.monitor)
-            )
-            warnings.warn(message)
-            return
-        
-        self._trial.report(current_score, step=current_epoch)
-        if self._trial.should_prune():
-            message = "Trial was pruned at epoch {}.".format(current_epoch)
-            raise optuna.TrialPruned(message)    
-    
-    def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
-        # Check only at the end of training
-        return self._process(trainer, pl_module)
-
-
-    def on_validation_end(self, trainer, pl_module):
-        # override this to disable early stopping at the end of val loop
-        pass    
-
-
-
-
 def delete_pyvista_fields(comsol_data : COMSOL_VTU,
                      fields_2_keep : List[str] = "Temperature") -> COMSOL_VTU:
     """Deletes all fields in COMSOL_VTU.mesh except fields_2_keep.

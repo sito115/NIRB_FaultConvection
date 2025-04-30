@@ -1,8 +1,4 @@
-import sys
-import os
-# Get the parent directory
-sys.path.insert(0, os.getcwd())
-from MPh import mph
+from scr.MPh import mph
 from pathlib import Path
 import logging
 import time

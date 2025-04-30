@@ -134,8 +134,7 @@ class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
             message = "Trial was pruned at epoch {}.".format(current_epoch)
             raise optuna.TrialPruned(message)    
     
-    
-    def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
+    def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
         # Check only at the end of training
         return self._process(trainer, pl_module)
 

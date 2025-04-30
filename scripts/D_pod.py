@@ -2,6 +2,8 @@ import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 import logging
+import sys
+sys.path.append(str(Path(__file__).parents[1]))
 from scr.utils import min_max_scaler
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

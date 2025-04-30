@@ -1,5 +1,3 @@
-from scr.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, MyEarlyStopping
-from scr.utils import load_pint_data
 import lightning as L
 from pathlib import Path
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -8,6 +6,11 @@ from torch import nn
 from torchinfo import summary
 from optuna.trial import TrialState
 import numpy as np
+import sys 
+sys.path.append(str(Path(__file__).parents[1]))
+from scr.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, MyEarlyStopping
+from scr.utils import load_pint_data
+
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
@@ -46,7 +49,7 @@ def objective(trial: optuna.Trial) -> float:
         activation_fn = nn.Tanh()
 
 
-    ROOT = Path(__file__).parent.parent / "Snapshots" / "01"
+    ROOT = Path(__file__).parent.parent / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy"
     train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
@@ -103,12 +106,12 @@ def objective(trial: optuna.Trial) -> float:
 
     logger = TensorBoardLogger(ROOT / "Optuna_Logs_2", name=f"trial_{trial.number}")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        min_epochs=int(0.25 * N_EPOCHS),
+                        # min_epochs=int(0.25 * N_EPOCHS),
                         logger=False,
                         enable_checkpointing=False,
                         callbacks=[optuna_pruning, r2_callback],
                         enable_progress_bar=False,
-                        max_time={"minutes": 20},
+                        max_time={"minutes": 15},
                         # accelerator= "cpu" #'mps',
                         )
 

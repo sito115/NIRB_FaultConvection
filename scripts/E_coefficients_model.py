@@ -1,13 +1,14 @@
 import lightning as L
-from scr.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd
-from scr.utils import load_pint_data
 from torchinfo import summary
 from torch import nn
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch import seed_everything
 import numpy as np
 from pathlib import Path
-
+import sys
+sys.path.append(str(Path(__file__).parents[1]))
+from scr.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd
+from scr.utils import load_pint_data
 
 if __name__ == "__main__":
     seed_everything(42) 

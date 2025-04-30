@@ -99,42 +99,7 @@ def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     return np.mean((predictions - targets)**2)    
     
     
-def delete_pyvista_fields(comsol_data : COMSOL_VTU,
-                     fields_2_keep : List[str] = "Temperature") -> COMSOL_VTU:
-    """Deletes all fields in COMSOL_VTU.mesh except fields_2_keep.
 
-    Args:
-        comsol_data (COMSOL_VTU): _description_
-        field_2_keep (List[str], optional): _description_. Defaults to "Temperature".
-
-    Returns:
-        COMSOL_VTU: _description_
-    """
-    fields_2_delete = comsol_data.exported_fields.copy()
-    for field_2_keep in fields_2_keep:
-        fields_2_delete.remove(field_2_keep)
-    for idx, field in enumerate(fields_2_delete):
-        comsol_data.delete_field(field)
-    return comsol_data
-
-
-def map_on_control_mesh(comsol_data : pv.PolyData,
-                        control_mesh: vtk.vtkImageData) -> pv.ImageData:
-    """Map 
-
-    Args:
-        comsol_data (pv.PolyData): _description_
-        control_mesh (vtk.vtkImageData): _description_
-
-    Returns:
-        vtk.vtkImageData: _description_
-    """    
-    probe = vtk.vtkProbeFilter()
-    probe.SetInputData(control_mesh)        # The grid where you want data
-    probe.SetSourceData(comsol_data)    # The mesh with the data to interpolate
-    probe.Update()
-    interpolated = probe.GetOutput()
-    return pv.wrap(interpolated)
         
 
 def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> float:

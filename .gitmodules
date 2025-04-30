@@ -5,3 +5,7 @@
 [submodule "NI-RBGeomechanics"]
 	path = NI-RBGeomechanics
 	url = http://10.0.1.2:3000/tsimader/NI-RBGeomechanics.git
+[submodule "scr/ComsolClasses"]
+	path = scr/ComsolClasses
+	url = http://10.0.1.2:3000/tsimader/ComsolClasses.git
+	branch = nirb

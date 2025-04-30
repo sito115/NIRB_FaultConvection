@@ -4,7 +4,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from ComsolClasses.comsol_classes import COMSOL_VTU
 from ComsolClasses.helper import calculate_normal
-from helpers import load_pint_data
+from helpers import load_pint_data, format_quantity
 from pint import UnitRegistry, Quantity
 import ast
 import numpy as np
@@ -41,19 +41,19 @@ def main():
     EXPORT_FIELD = "Temperature"
     IS_EXPORT_MINMAX_TEMP = False
     IS_EXPORT_NPY = False
-    IS_EXPORT_DF = False
+    IS_EXPORT_DF = True
     
-    ROOT = Path(__file__).parent.parent
-    PARAMETER_SPACE = "01"
-    data_type = "Training"
+    ROOT = Path(__file__).parents[1]
+    PARAMETER_SPACE = "03"
+    DATA_TYPE = "Training"
     # data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
-    data_folder = Path(ROOT / "Snapshots" / PARAMETER_SPACE / data_type) #"Truncated") # data_type)
+    data_folder = Path(ROOT / "Snapshots" / PARAMETER_SPACE /  "Training_Original") # data_type) #"Truncated") # data_type)
     
-    pint_parameters_df = load_pint_data(ROOT /  "Snapshots" / PARAMETER_SPACE / f"{data_type.lower()}_samples.csv")
+    pint_parameters_df = load_pint_data(ROOT /  "Snapshots" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv")
     
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    # export_folder =  data_folder.parent / "Truncated" #"Exports"
-    export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
+    export_folder =  data_folder.parent / "Exports"
+    # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
   
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
@@ -66,9 +66,9 @@ def main():
     temperatures_diff = np.zeros_like(temperatures)
     sim_times = np.zeros((len(vtu_files), ))
     
-    indices = [33, 37, 41, 45, 48, 49, 50, 52, 53] # PS01
+    # indices = [33, 37, 41, 45, 48, 49, 50, 52, 53] # PS01
     # indices = [11, 77, 27, 35, 68, 92, 6, 85, 36, 99, 93] # PS02
-    vtu_files = [vtu_files[i] for i in indices]
+    # vtu_files = [vtu_files[i] for i in indices]
     # for idx, vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         idx = int(vtu_file.stem.split("_")[1])
@@ -91,7 +91,10 @@ def main():
         t_grad = (t_h - t_c) / parameters_pint['H'].to('m').magnitude
 
         if IS_EXPORT_MP4:
-            param_string =  "\n".join([f"{col} = {para.magnitude:.2e} {para.units:~P}" for col, para in pint_parameters_df.loc[idx].items()])
+            param_string = "\n".join([
+                            f"{col} = {format_quantity(para)}"
+                            for col, para in pint_parameters_df.loc[idx].items()
+                            ])
             normal = calculate_normal(dip, strike)
             kwargs={'normal' : -np.array(normal),
                 'origin' : comsol_data.mesh.center,
@@ -121,9 +124,9 @@ def main():
             temperatures_diff[idx, :time_len, :] = temp_diff
 
     if IS_EXPORT_NPY:
-        np.save(export_folder / f"{data_type}_sim_times.npy", np.array(sim_times))
-        np.save(export_folder / f"{data_type}_temperatures.npy", temperatures      )
-        np.save(export_folder / f"{data_type}_temperatures_diff.npy", temperatures_diff )
+        np.save(export_folder / f"{DATA_TYPE}_sim_times.npy", np.array(sim_times))
+        np.save(export_folder / f"{DATA_TYPE}_temperatures.npy", temperatures      )
+        np.save(export_folder / f"{DATA_TYPE}_temperatures_diff.npy", temperatures_diff )
 
 
 if __name__ == "__main__":

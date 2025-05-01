@@ -13,10 +13,10 @@ from scr.utils import load_pint_data
 if __name__ == "__main__":
     seed_everything(42) 
     ACCURACY = 1e-3
-    BATCH_SIZE = 20
-    LR = 1e-4 # 0.008656381123933186 # Trial 93
-    N_EPOCHS = 100
-    ROOT = Path(__file__).parent.parent / "Snapshots" / "01"
+    BATCH_SIZE = 13
+    LR = 0.00141 # 0.008656381123933186 # Trial 93
+    N_EPOCHS = 50_000
+    ROOT = Path(__file__).parent.parent / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     
     basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy"
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                       [6, 44, 96, 80, 34],
+                       [13, 260, 275, 295, 41],
                        n_outputs,
                        activation=nn.Sigmoid(),
                        learning_rate=LR)
@@ -65,13 +65,13 @@ if __name__ == "__main__":
 
     logger = TensorBoardLogger(ROOT, name="nn_logs")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        logger=None,
+                        logger=logger,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
                         callbacks=[r2_callback],
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=1,
+                        devices=5,
                         accelerator= "cpu" #'mps',
                         )
     

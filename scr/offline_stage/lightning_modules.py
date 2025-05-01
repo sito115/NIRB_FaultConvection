@@ -24,9 +24,10 @@ class NirbModule(L.LightningModule):
         self.model = NIRB_NN(n_inputs, hidden_units, n_outputs, self.activation)
         
         self.msa_metric = MeanAbsoluteError()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['activation'])
         self.test_snaps_scaled : np.ndarray = None
         self.basis_functions : np.ndarray = None
+        self.train_loss : float = None
         
     def forward(self, x):
         return self.model(x)
@@ -46,6 +47,7 @@ class NirbModule(L.LightningModule):
                       on_epoch=True,
                       logger=True,
                       sync_dist=True)
+        self.train_loss = loss.item()
         return loss
     
     
@@ -114,17 +116,23 @@ class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
     
     def __init__(self,
                  trial: optuna.Trial,
-                 termination_threshold=5.0,
-                 min_epochs=5000,
+                 min_epochs: int = 5000,
                  **kwargs):
         super().__init__(**kwargs)
-        self.termination_threshold = termination_threshold
         self.min_epochs = min_epochs
         self._trial = trial
     
     
     def _process(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        
+        """Enable Optuna pruning if one trial seems not promising.
+
+        Args:
+            trainer (L.Trainer): _description_
+            pl_module (L.LightningModule): _description_
+
+        Raises:
+            optuna.TrialPruned: This error tells a trainer that the current ~optuna.trial.Trial was pruned. 
+        """        
         current_epoch = pl_module.current_epoch
         current_score = trainer.callback_metrics.get(self.monitor)
         if current_score is None:
@@ -135,13 +143,17 @@ class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
             warnings.warn(message)
             return
         
+        # "Anealing Phase"
+        if current_epoch < self.min_epochs:
+            return
+        
         self._trial.report(current_score, step=current_epoch)
         if self._trial.should_prune():
             message = "Trial was pruned at epoch {}.".format(current_epoch)
             raise optuna.TrialPruned(message)    
     
     def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
-        # Check only at the end of training
+        # Check only at the end of each training epoch
         return self._process(trainer, pl_module)
 
 

@@ -99,6 +99,27 @@ def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     return np.mean((predictions - targets)**2)    
     
     
+def convert_str_to_pint(value: str) -> pint.Quantity:
+    """ Converts Comsol parameters to pint.Quantities.
+
+
+    Args:
+        value (str): Comsol parameter value (format is "Value[Unit]")
+
+    Returns:
+        pint.Quantity:
+    """
+    ureg = pint.UnitRegistry()
+    try:
+        if "[" in value:
+            splitted_value = value.split("[") 
+            numeric_value = float(splitted_value[0])
+            unit = splitted_value[1].split("]")[0]
+            return ureg.Quantity(numeric_value, unit).to_base_units()
+        else:
+            return float(value) * ureg("dimensionless")
+    except ValueError:
+        return value  # Return the original value if conversion fails
 
         
 

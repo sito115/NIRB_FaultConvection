@@ -14,42 +14,35 @@ from scr.utils import load_pint_data
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
-    hidden1 = trial.suggest_int("hiden1", low = 5, high = 20)
+    hidden1 = trial.suggest_int("hiden1", low = 2, high = 25)
     num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 5)
     hidden_layers_betw = [
-        trial.suggest_int(f"hidden_layers_betw{i}", 10, 300, step=5)
+        trial.suggest_int(f"hidden_layers_betw{i}", 25, 300, step=2)
         for i in range(num_inbetw_layers)
     ]
     
-    # hidden2 = trial.suggest_int("hiden2", low = 16,  high = 64 ,step=4)
-    # hidden3 = trial.suggest_int("hiden3", low = 32,  high = 128 ,step=8)
-    # hidden4 = trial.suggest_int("hiden4", low = 32,  high = 128 ,step=8)
+    hidden6 = trial.suggest_int("hiden6", low = 10,  high = 100 ,step=2)
     
-    # is_hidden5 = trial.suggest_categorical("is_hidden5", [True, False])
-    # if is_hidden5:
-    #     hidden5 = trial.suggest_int("hiden5", low = 32,  high = 128 ,step=8)
-    hidden6 = trial.suggest_int("hiden6", low = 10,  high = 64 ,step=2)
-    
-    # hidden_layers = [8, 16] + [hidden3, hidden4, hidden5, hidden6]
-
     ROOT = Path("/Users/thomassimader/Documents/NIRB/Snapshots/01")
-    N_EPOCHS = 20_000 #20_000
+    N_EPOCHS = 25_000 #20_000
     ACCURACY = 1e-3
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 1e-5, 2.5e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 10, 25)
+    batch_size = trial.suggest_int("batch_size", 15, 25)
 
-    activation_name =  trial.suggest_categorical("activation", ["relu", "sigmoid", "tanh"])
-    if activation_name == "relu":
+    activation_name = "sigmoid" # trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
+    if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
+    elif activation_name == "relu":
+        activation_fn = nn.ReLU()
     elif activation_name == "sigmoid":
         activation_fn = nn.Sigmoid()
     elif activation_name =="tanh":
         activation_fn = nn.Tanh()
 
 
-    ROOT = Path(__file__).parent.parent / "data" / "01"
+    ROOT = Path(__file__).parents[1] / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy"
     train_snapshots_path = ROOT / "Exports" / "Training_temperatures.npy"
@@ -95,6 +88,7 @@ def objective(trial: optuna.Trial) -> float:
             
     optuna_pruning = MyEarlyStopping(
         trial, 
+        min_epochs=8_000,
         monitor="train_loss",        # or "val_loss"
         mode="min",                  # we're minimizing loss
         )
@@ -106,31 +100,30 @@ def objective(trial: optuna.Trial) -> float:
 
     logger = TensorBoardLogger(ROOT / "Optuna_Logs_2", name=f"trial_{trial.number}")
     trainer = L.Trainer(max_epochs=N_EPOCHS,
-                        # min_epochs=int(0.25 * N_EPOCHS),
                         logger=False,
                         enable_checkpointing=False,
                         callbacks=[optuna_pruning, r2_callback],
                         enable_progress_bar=False,
-                        max_time={"minutes": 15},
-                        # accelerator= "cpu" #'mps',
+                        max_time={"minutes": 30},
                         )
 
-    trainer.fit(model, train_dataloaders=data_module.train_dataloader())
+    trainer.fit(model, train_dataloaders=data_module.train_dataloader(shuffle=True))
     
-    results = trainer.test(model, dataloaders=data_module.train_dataloader())
-    test_loss = results[0]['test_loss']
-    train_loss = trainer.callback_metrics["train_loss"].item()
+    # results = trainer.test(model, dataloaders=data_module.train_dataloader())
+    # test_loss = results[0]['test_loss']
+    # train_loss = trainer.callback_metrics["train_loss"].item()
+    train_loss = model.train_loss
     return train_loss
 
 if __name__ == "__main__":
     db_path = Path(__file__).parents[1] / "db.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
-        "study_name": "optuna_sweep_2",
+        "study_name": "optuna_sweep_6",
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize", **storage_param)
-    study.optimize(objective, n_trials=400, n_jobs=4)
+    study.optimize(objective, n_trials=200, n_jobs=4)
 
     print("Best hyperparameters:")
     print(study.best_params)

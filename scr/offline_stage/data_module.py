@@ -59,9 +59,9 @@ class NirbDataModule():
     def train_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_train,
                           batch_size=self.batch_size,
-                          *kwargs)
+                          **kwargs)
 
     def test_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_test,
                           batch_size=len(self.dataset_test),  # All in one batch
-                          *kwargs)
+                          **kwargs)

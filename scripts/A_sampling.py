@@ -1,3 +1,10 @@
+"""
+This script generates parameter samples for training and testing snapshots.
+The parameter space is defined by adding multiple instances of the "Parameter" class.
+Training samples are generated using hypercube sampling, while test samples use random sampling.
+The resulting samples are saved to "training_samples.csv" and "test_samples.csv".
+"""
+
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -5,7 +12,7 @@ from pyDOE import lhs
 from typing import List
 import random
 import pint_pandas
-import pint
+import pint # noqa: F401
 from scr.sampling import Parameter
 
 

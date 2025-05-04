@@ -17,6 +17,8 @@ PythonSkripts/*
 *.png
 *.csv
 *.sqlite3
+*.vti
+*.mph
 events.out*
 # Virtual environments
 .venv

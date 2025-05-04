@@ -19,6 +19,7 @@ Each script/notebook contains an alphabetical prefix that denotes its chronologi
 ├── docs
 ├── notebooks
 │   ├── A_plot_samples.ipynb
+│   ├── C_entropy_vs_n_cells.ipynb
 │   ├── C_quality_check_plots.ipynb
 │   ├── D_quality_check.ipynb
 │   ├── E_online_stage.ipynb
@@ -30,9 +31,9 @@ Each script/notebook contains an alphabetical prefix that denotes its chronologi
 │   └── utils
 ├── scripts
 │   ├── A_sampling.py
-│   ├── B_nirb_loop.py
+│   ├── B_compute_snapshots.py
 │   ├── C_map_on_control_mesh.py
-│   ├── C_quality_check.py
+│   ├── C_process_map_export.py
 │   ├── D_pod.py
 │   ├── E_coefficients_model.py
 │   ├── E_sweep.py

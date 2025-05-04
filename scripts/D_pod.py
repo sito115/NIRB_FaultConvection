@@ -49,12 +49,6 @@ if __name__ == "__main__":
     temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
     
     data_set = temperatures[:, -1, :] # last time step
-    
-    if PARAMETER_SPACE == "02" and DATA_TYPE == "Training":
-        for idx in [41, 62, 87]:
-            temperatures[idx, -1, :] = temperatures[idx, 10, :]
-
-    data_set = temperatures[:, -1, :] # last time step
     data_set_scaled = min_max_scaler(data_set)
     
     pod = POD(POD_snapshots=data_set_scaled)

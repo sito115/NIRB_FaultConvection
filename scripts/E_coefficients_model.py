@@ -1,5 +1,12 @@
+"""
+Define a neural network (NN) to predict the coefficient for each basis function from "D_pod.py".
+The input are the respective parameters from A_sampling.py 
+The training and test outputs (coefficients for basis functions) are computed in the NirbDataModule class.
+Everything for the definition of the NN is defined in the NirbModule(L.LightningModule) class.
+"""
+
 import lightning as L
-from torchinfo import summary
+from torchinfo import summary # noqa: F401
 from torch import nn
 from lightning.pytorch.loggers import TensorBoardLogger
 from lightning.pytorch import seed_everything
@@ -13,9 +20,9 @@ from scr.utils import load_pint_data
 if __name__ == "__main__":
     seed_everything(42) 
     ACCURACY = 1e-3
-    BATCH_SIZE = 13
-    LR = 0.00141 # 0.008656381123933186 # Trial 93
-    N_EPOCHS = 50_000
+    BATCH_SIZE = 21
+    LR = 0.000262 #0.00141 # 0.008656381123933186 # Trial 93
+    N_EPOCHS = 150_000
     ROOT = Path(__file__).parent.parent / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     
@@ -41,16 +48,16 @@ if __name__ == "__main__":
         training_param=training_parameters,
         test_param=training_parameters,
         test_snaps=training_snapshots,
-        batch_size=20,
+        batch_size=BATCH_SIZE,
     )
     
     n_inputs = training_parameters.shape[1]
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                       [13, 260, 275, 295, 41],
+                       [21, 270, 210, 290, 265, 28],
                        n_outputs,
-                       activation=nn.Sigmoid(),
+                       activation=nn.LeakyReLU(),
                        learning_rate=LR)
     
     # summary(model.model, 
@@ -63,7 +70,8 @@ if __name__ == "__main__":
                                       data_module.training_snaps_scaled,
                                       data_module.basis_func_mtrx)
 
-    logger = TensorBoardLogger(ROOT, name="nn_logs")
+    logger_dir_name = f"nn_logs_{ACCURACY:.1e}"
+    logger = TensorBoardLogger(ROOT, name=logger_dir_name)
     trainer = L.Trainer(max_epochs=N_EPOCHS,
                         logger=logger,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
@@ -71,15 +79,17 @@ if __name__ == "__main__":
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=5,
+                        devices=4,
                         accelerator= "cpu" #'mps',
                         )
     
-
-    # ckpt_path = "/Users/thomassimader/Documents/NIRB/Snapshots/01/nn_logs/version_41/checkpoints/epoch=199999-step=200000.ckpt"
+    ckpt_folder = ROOT / logger_dir_name / "version_56" / "checkpoints"
+    ckpt_path = [path for path in ckpt_folder.iterdir() if path.suffix == ".ckpt"][0]
+    print(ckpt_path)
+    
     trainer.fit(model=model,
                 train_dataloaders=data_module.train_dataloader(),
-                ckpt_path = None)
+                ckpt_path = ckpt_path)
     model.test_snaps_scaled = data_module.test_snaps_scaled
     results = trainer.test(model=model,
                  dataloaders=data_module.test_dataloader())

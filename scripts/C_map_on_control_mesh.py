@@ -1,3 +1,7 @@
+"""
+Export last time step on control mesh.
+"""
+
 from ast import List
 import sys
 import numpy as np
@@ -30,7 +34,7 @@ def main():
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
     
     x_min, x_max, y_min, y_max, z_min, z_max = COMSOL_VTU(vtu_files[0]).mesh.bounds
-    spacing = (50, 50, 50)
+    spacing = (50, 50, 25)
     
     # Reduce bounds of control mesh to be within source mesh to avoid interpolation errors.
     x_min = int(x_min) + spacing[0]
@@ -45,9 +49,12 @@ def main():
                                         z_min, z_max),
                                        spacing)
     
-    for vtu_path in tqdm(vtu_files, total=len(vtu_files), desc="Mapping files on control mesh"):
+    spacing_str = '_'.join(f"{x:.0f}" for x in spacing)
+    bounds_str = '_'.join(f"{x:.0f}" for x in (x_min, x_max, y_min, y_max, z_min, z_max))
+    export_folder = export_folder / f"s{spacing_str}_b{bounds_str}"
+    export_folder.mkdir(exist_ok=True)
+    for vtu_path in tqdm(vtu_files, total=len(vtu_files), desc="Mapping last time step on control mesh"):
         comsol_data = COMSOL_VTU(vtu_path)
-        idx = comsol_data.mesh.field_data["Idx"]
         # Delete fields of no interest to reduce file size after interpolation
         comsol_data = delete_comsol_fields(comsol_data, FIELDS_TO_EXPORT)
         for i in range(len(comsol_data.times) - 1): # delete every time step except last one (-1)
@@ -55,9 +62,12 @@ def main():
         mapped : pv.ImageData = map_on_control_mesh(comsol_data.mesh, control_mesh)
         assert np.min(mapped.point_data["vtkValidPointMask"]) > 0, f"Error in interpolation in file {vtu_path.name}"
         mapped.point_data.remove("vtkValidPointMask")
-        spacing_str = '_'.join(f"{x:.0f}" for x in spacing)
-        bounds_str = '_'.join(f"{x:.0f}" for x in (x_min, x_max, y_min, y_max, z_min, z_max))
+        for key, value in comsol_data.mesh.field_data.items(): # Transfer meta data (Parameters, Idx, SimTime)
+            mapped.field_data[key] = value
         mapped.save(export_folder / f"{vtu_path.stem}_s{spacing_str}_b{bounds_str}.vti") # VTK ImageData (best for structured image data)
+        
+    total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".vti")  / (1024 * 1024)
+    print(f"Total size of all mapped .vti files: {total_size} MB")
 
 if __name__ == "__main__":
     main()

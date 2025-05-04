@@ -1,3 +1,8 @@
+"""
+This script performs Proper Orthogonal Decomposition (POD) on the files exported by "C_process_map_export.py".
+A key parameter is the ACCURACY variable, which sets the energy threshold, determining the number of basis functions.
+The script exports the basis functions, the energy of each basis function, and the minimum and maximum values of the dataset (for min-max scaling).
+"""
 import numpy as np
 from dataclasses import dataclass
 from pathlib import Path

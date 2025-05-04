@@ -1,73 +1,106 @@
+"""
+This script extracts and combines individual snapshots (exported from COMSOL as vtu files in "B_compute_snapshots.py") into a single file (either in npy or joblib format).
+Additionally, it allows mapping each snapshot onto a control mesh before export.
+The script also provides the option to generate MP4 movies with a cut along the fault plane.
+"""
 from pathlib import Path
 import pandas as pd
-from scr.comsol_module.comsol_classes import COMSOL_VTU
-from scr.comsol_module.helper import calculate_normal
-from scr.utils import load_pint_data, format_quantity
-from pint import UnitRegistry, Quantity
 import ast
 import numpy as np
+import pint
 from tqdm import tqdm
+import sys
+from joblib import dump
+import pyvista as pv
+sys.path.append(str(Path(__file__).parents[1]))
+from scr.comsol_module.comsol_classes import COMSOL_VTU
+from scr.comsol_module.helper import calculate_normal
+from scr.utils import (load_pint_data,
+                       format_quantity,
+                       convert_str_to_pint,
+                       map_on_control_mesh,
+                       create_control_mesh,
+                       delete_comsol_fields)
 
 
-def convert_str_to_pint(value) -> Quantity:
-    """ Converts Comsol parameters to pint.Quantities.
-
-    Args:
-        value (_type_): Comsol parameter value (format is "Value[Unit]")
-
-    Returns:
-        _type_: _description_
-    """    
-    ureg = UnitRegistry()
-    try:
-        if "[" in value:
-            splitted_value = value.split("[") 
-            numeric_value = float(splitted_value[0])
-            unit = splitted_value[1].split("]")[0]
-            return ureg.Quantity(numeric_value, unit).to_base_units()
-        else:
-            return float(value) * ureg("dimensionless")
-    except ValueError:
-        return value  # Return the original value if conversion fails
+def generate_data_mapped_on_control_mesh(bounds: pv.BoundsTuple, spacing: tuple, comsol_data: COMSOL_VTU, field_2_export: str) -> COMSOL_VTU:
+    x_min, x_max, y_min, y_max, z_min, z_max = bounds
+    
+    # Reduce bounds of control mesh to be within source mesh to avoid interpolation errors.
+    x_min = int(x_min) + spacing[0]
+    x_max = int(x_max) - spacing[0]
+    y_min = int(y_min) + spacing[1]
+    y_max = int(y_max) - spacing[1]
+    z_min = int(z_min) + spacing[2] # z_min is negativ
+    # z_max = int(z_max) - spacing[2] # z_max is positive
+    
+    control_mesh = create_control_mesh((x_min, x_max,
+                                        y_min, y_max,
+                                        z_min, z_max),
+                                        spacing)
+    # Delete fields of no interest to reduce file size after interpolation
+    comsol_data = delete_comsol_fields(comsol_data, fields_2_keep=[field_2_export])
+    mapped : pv.ImageData = map_on_control_mesh(comsol_data.mesh, control_mesh)
+    assert np.min(mapped.point_data["vtkValidPointMask"]) > 0, f"Error in interpolation in file {comsol_data.vtu_path.name}"
+    mapped.point_data.remove("vtkValidPointMask")
+    comsol_data.mesh = mapped
+    return comsol_data
 
 
 def main():
     """Extract "EXPORT_FIELD" from  multiple vtu-Files and save it as npy-File.
     Optionally create mp4 movies of simulations. 
     """    
-    IS_EXPORT_MP4 = True
-    EXPORT_FIELD = "Temperature"
-    IS_EXPORT_MINMAX_TEMP = False
-    IS_EXPORT_NPY = False
-    IS_EXPORT_DF = True
+    IS_EXPORT_MP4 = False           # Export MP4 movies
+    EXPORT_FIELD = "Temperature"   # Which field to save 
+    IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
+    IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
+    IS_MAP_ON_CONTROL_MESH = False  # map data on a control mesh
+    IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
+    SPACING  = (100, 100, 100)        # Spacing for control mesh [m]
     
     ROOT = Path(__file__).parents[1]
     PARAMETER_SPACE = "03"
     DATA_TYPE = "Training"
-    # data_folder = Path(ROOT / "Snapshots" / VERSION / data_type)
-    data_folder = Path(ROOT / "Snapshots" / PARAMETER_SPACE /  "Training_Original") # data_type) #"Truncated") # data_type)
-    
-    pint_parameters_df = load_pint_data(ROOT /  "Snapshots" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv")
+    data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TrainingMapped" / "s200_200_200_b200_3800_200_4800_-3800_0") # data_type) #"Truncated") # data_type)
     
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    export_folder =  data_folder.parent / "Exports"
+    export_folder = data_folder # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
     # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
-    assert str(data_folder.absolute()) != str(export_folder.absolute()), "Import and Export from same folder not allowed"
-    vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
-
+    vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])
+    assert len(vtu_files) > 0
     
     # extract time steps and points from first simulation
-    N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
-    N_POINTS          = COMSOL_VTU(vtu_files[0]).mesh.points.shape[0]
-    temperatures      = np.zeros((len(vtu_files), N_TIME_STEPS, N_POINTS))
-    temperatures_diff = np.zeros_like(temperatures)
     sim_times = np.zeros((len(vtu_files), ))
+    if IS_MAP_ON_CONTROL_MESH:
+        comsol_data = COMSOL_VTU(vtu_files[0])
+        bounds = comsol_data.mesh.bounds
+        comsol_data = generate_data_mapped_on_control_mesh(bounds, SPACING, comsol_data, "Temperature")
+        comsol_data.mesh.clear_data()
+        N_POINTS = comsol_data.mesh.points.shape[0]
+        N_TIME_STEPS = len(comsol_data.times)
+        spacing_str = '_'.join(f"{x:.0f}" for x in SPACING)
+        bounds_str = '_'.join(f"{x:.0f}" for x in (comsol_data.mesh.bounds))
+        export_folder = export_folder / f"s{spacing_str}_b{bounds_str}"
+        export_folder.mkdir(exist_ok=True)
+        comsol_data.mesh.save(export_folder / f"CONTROL_MESH_s{spacing_str}_b{bounds_str}.vti")
+    else:
+        N_POINTS          = COMSOL_VTU(vtu_files[0]).mesh.points.shape[0]
+        N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
+        
+    if IS_EXPORT_NPY:
+        temperatures      = np.zeros((len(vtu_files), N_TIME_STEPS, N_POINTS))
+        temperatures_diff = np.zeros_like(temperatures)
+    if IS_EXPORT_JOBLIB:
+        temperatures = [np.array([]) for _ in range(len(vtu_files))]
+        temperatures_diff =  [np.array([]) for _ in range(len(vtu_files))]
+
     
     # indices = [33, 37, 41, 45, 48, 49, 50, 52, 53] # PS01
     # indices = [11, 77, 27, 35, 68, 92, 6, 85, 36, 99, 93] # PS02
     # vtu_files = [vtu_files[i] for i in indices]
-    # for idx, vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
+    
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         idx = int(vtu_file.stem.split("_")[1])
         comsol_data = COMSOL_VTU(vtu_file)
@@ -75,20 +108,21 @@ def main():
         sim_times[idx] = sim_time
         parameters = comsol_data.mesh.field_data['Parameters']
         parameters = ast.literal_eval(parameters[0])
-        parameters_pint : dict[Quantity] = {}
+        parameters_pint : dict[pint.Quantity] = {}
         for key, value in parameters.items():
             parameters_pint[key] = convert_str_to_pint(value)
         comsol_data.parameters = parameters_pint
-        
-        
-        
-        dip = parameters_pint['dip'].to('degree').magnitude
-        strike = parameters_pint['strike'].to('degree').magnitude
         t_c = parameters_pint['T_c'].to('K').magnitude
         t_h = parameters_pint['T_h'].to('K').magnitude
         t_grad = (t_h - t_c) / parameters_pint['H'].to('m').magnitude
-
+        
+        if IS_MAP_ON_CONTROL_MESH:
+            comsol_data = generate_data_mapped_on_control_mesh(bounds, SPACING, comsol_data, "Temperature")
+    
         if IS_EXPORT_MP4:
+            dip = parameters_pint['dip'].to('degree').magnitude
+            strike = parameters_pint['strike'].to('degree').magnitude
+            pint_parameters_df = load_pint_data(ROOT /  "data" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv") # TODO: load each paramter.csv inidivudally
             param_string = "\n".join([
                             f"{col} = {format_quantity(para)}"
                             for col, para in pint_parameters_df.loc[idx].items()
@@ -106,25 +140,40 @@ def main():
                                         mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}_diff_{kwargs['is_diff']:d}.mp4",
                                         **kwargs)
             
-            if IS_EXPORT_DF:
-                df = pd.DataFrame().from_dict(parameters_pint,
-                                            orient='index')
-                df.columns = ['quantity'] 
-                                            # columns=['Parameter', "Value"])
-                df.index = df.index.astype(str)
-                df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
+        if IS_EXPORT_DF:
+            df = pd.DataFrame().from_dict(parameters_pint,
+                                        orient='index')
+            df.columns = ['quantity'] 
+                                        # columns=['Parameter', "Value"])
+            df.index = df.index.astype(str)
+            df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
             
-        if IS_EXPORT_MINMAX_TEMP: # min max temperatures differences to initial state (pure conduction)
+        if IS_EXPORT_NPY or IS_EXPORT_JOBLIB: # min max temperatures differences to initial state (pure conduction)
             temp_array = comsol_data.get_array('Temperature')
             temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
-            time_len = temp_array.shape[0]
-            temperatures[idx, :time_len, :] = temp_array
-            temperatures_diff[idx, :time_len, :] = temp_diff
+            
+            if IS_EXPORT_NPY:
+                time_len = temp_array.shape[0]
+                temperatures[idx, :time_len, :] = temp_array
+                temperatures_diff[idx, :time_len, :] = temp_diff
+            
+            if IS_EXPORT_JOBLIB:
+                temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
+                temperatures[idx] = temp_array
+                temperatures_diff[idx] = temp_diff
 
     if IS_EXPORT_NPY:
-        np.save(export_folder / f"{DATA_TYPE}_sim_times.npy", np.array(sim_times))
-        np.save(export_folder / f"{DATA_TYPE}_temperatures.npy", temperatures      )
+        np.save(export_folder / f"{DATA_TYPE}_temperatures.npy", temperatures)
         np.save(export_folder / f"{DATA_TYPE}_temperatures_diff.npy", temperatures_diff )
+        
+    if IS_EXPORT_JOBLIB:
+        dump(temperatures,export_folder / f"{DATA_TYPE}_temperatures.joblib")
+        dump(temperatures_diff, export_folder / f"{DATA_TYPE}_temperatures_diff.joblib")
+        print("Joblib export successfull")
+        total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".joblib")  / (1024 * 1024)
+        print(f"Total size of all mapped .vti files: {total_size} MB")
+        
+    np.save(export_folder / f"{DATA_TYPE}_sim_times.npy", np.array(sim_times))
 
 
 if __name__ == "__main__":

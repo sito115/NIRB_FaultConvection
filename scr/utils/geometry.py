@@ -52,14 +52,21 @@ def delete_comsol_fields(comsol_data : COMSOL_VTU,
 
 def map_on_control_mesh(comsol_data : pv.PolyData,
                         control_mesh: vtk.vtkImageData) -> pv.ImageData:
-    """Map 
+    """Map on control mesh with a vtkProbeFilter
+    https://vtk.org/doc/nightly/html/classvtkProbeFilter.html
+    https://public.kitware.com/Wiki/Demystifying_the_vtkProbeFilter
+
+    VtkProbeFilter
+    For structured datasets (vtkImageData, vtkStructuredGrid), VTK uses trilinear interpolation based on the grid spacing and cell values.
+    For unstructured grids, interpolation is done using barycentric coordinates within the cell where the probe point lies. The field value is computed as a linear combination of the values at the cell's nodes.
+    If the probe point lies outside the source mesh, no interpolation is performed, and the vtkValidPointMask array marks the result as invalid.
 
     Args:
-        comsol_data (pv.PolyData): _description_
-        control_mesh (vtk.vtkImageData): _description_
+        comsol_data (pv.PolyData): Source mesh
+        control_mesh (vtk.vtkImageData): Control mesh
 
     Returns:
-        vtk.vtkImageData: _description_
+        pv.ImageData: Mapped data on control mesh.
     """    
     probe = vtk.vtkProbeFilter()
     probe.SetInputData(control_mesh)        # The grid where you want data

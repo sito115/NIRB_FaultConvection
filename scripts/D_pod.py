@@ -42,11 +42,18 @@ class POD:
         logging.info(f'Selected {len(self.information_content)} basis function.')
 
 if __name__ == "__main__":
-    PARAMETER_SPACE = "01"
+    PARAMETER_SPACE = "03"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
     ACCURACY = 1e-4
-    temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
+    
+    import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b100_3900_100_4900_-3900_0" / f"{DATA_TYPE}_temperatures.npy"
+    export_folder = import_path.parent.joinpath("BasisFunctions")
+    export_folder.mkdir(exist_ok=True)
+    assert import_path.exists()
+    assert export_folder.exists()
+    # temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
+    temperatures = np.load(import_path)
     
     data_set = temperatures[:, -1, :] # last time step
     data_set_scaled = min_max_scaler(data_set)
@@ -58,6 +65,6 @@ if __name__ == "__main__":
     print(np.cumsum(pod.information_content))
     print(len(pod.information_content))
     
-    np.save(ROOT / "Snapshots" / PARAMETER_SPACE / "BasisFunctions" / f"information_content_{ACCURACY:.1e}.npy", pod.information_content)
-    np.save(ROOT / "Snapshots" / PARAMETER_SPACE / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}.npy", pod.basis_fts_matrix)
-    np.save(ROOT / "Snapshots" / PARAMETER_SPACE / "BasisFunctions" / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))
+    np.save(export_folder / f"information_content_{ACCURACY:.1e}.npy", pod.information_content)
+    np.save(export_folder / f"basis_fts_matrix_{ACCURACY:.1e}.npy", pod.basis_fts_matrix)
+    np.save(export_folder / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))

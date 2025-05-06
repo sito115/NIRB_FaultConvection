@@ -5,11 +5,12 @@ from .helpers import (
     inverse_min_max_scaler,
     safe_parse_quantity,
     standardize,
-    convert_str_to_pint
+    convert_str_to_pint,
 )
 
 from .geometry import(
     create_control_mesh,
     map_on_control_mesh,
-    delete_comsol_fields
+    delete_comsol_fields,
+    inverse_distance_weighting,
 )

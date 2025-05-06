@@ -74,3 +74,28 @@ def map_on_control_mesh(comsol_data : pv.PolyData,
     probe.Update()
     interpolated = probe.GetOutput()
     return pv.wrap(interpolated)
+
+
+def inverse_distance_weighting(target_point: np.ndarray,
+                               neigbour_points: np.ndarray,
+                               neighbour_values: np.ndarray,
+                               beta: float = 2) -> float:
+    """Inverse distance weighting.
+
+    Args:
+        target_point (np.ndarray): (3,)
+        neigbour_points (np.ndarray): (N, 3)
+        neighbour_values (np.ndarray): (N, 3)
+        beta (float, optional): The inverse distance power, β, determines the degree to which the nearer point(s) are preferred over more distant points. Typically β=1 or β=2 corresponding to an inverse or inverse squared relationship.. Defaults to 2.
+
+    Returns:
+        float: interpolated value
+    """
+    # https://www.geo.fu-berlin.de/en/v/soga-py/Advanced-statistics/Spatial-Interpolation/Inverse-Distance-Weighting/index.html
+    distances = np.linalg.norm(target_point - neigbour_points, axis=1) # same as np.sqrt(np.sum((target_point - neigbour_points)**2, axis=1))
+    # If the point x coincides with an observation location (x=xi), then the observed value,x, is returned to avoid infinite weights.
+    zero_distance_indices = np.where(distances == 0)[0]
+    if zero_distance_indices.size > 0:
+        return neighbour_values[zero_distance_indices[0]]
+    weights = distances**(-beta)
+    return (np.sum(weights*neighbour_values))  / np.sum(weights)

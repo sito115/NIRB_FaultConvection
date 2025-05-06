@@ -1,13 +1,5 @@
 import numpy as np
-from pathlib import Path
-import pandas as pd
-import pint_pandas  # noqa: F401
-import pint
-from typing import List
-import pyvista as pv
-import vtk
 from sklearn.metrics import mean_squared_error
-from scr.comsol_module.comsol_classes import COMSOL_VTU
 
 def min_max_scaler(data: np.ndarray) -> np.ndarray:
     """Min-max scaler to scale the data between 0 and 1.
@@ -36,39 +28,6 @@ def inverse_min_max_scaler(data: np.ndarray, min_val: float, max_val: float) -> 
     """
     return data * (max_val - min_val) + min_val
 
-
-def safe_parse_quantity(s, ureg: pint.UnitRegistry = pint.UnitRegistry()):
-    """Convert string quantities in Dataframe to pint quantities.
-
-    Args:
-        s (_type_): String quantity, e.g. "0.2 m*m"
-        ureg (pint.UnitRegistry, optional): _description_. Defaults to pint.UnitRegistry().
-
-    Returns:
-        _type_: pint quantity
-    """    
-    try:
-        return ureg(s)
-    except Exception:
-        return np.nan
-
-
-def load_pint_data(path: Path, is_numpy = False, **kwargs) -> pd.DataFrame:
-    """Load csv that has parameter names in the first row and units in the second row.
-
-    Args:
-        path (Path): _description_
-
-    Returns:
-        pd.DataFrame: _description_
-    """    
-    header = kwargs.pop("header", [0, 1])
-    level = kwargs.pop("level", -1)
-    training_param = pd.read_csv(path, header=header)
-    training_param =  training_param.pint.quantify(level = level)
-    if is_numpy:
-        return training_param.pint.dequantify().to_numpy()
-    return training_param
         
 def standardize(array: np.ndarray, mean:np.ndarray, var:np.ndarray) -> np.ndarray:
     """This function subtracts the mean and divides by the square root of the variance
@@ -99,27 +58,7 @@ def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     return np.mean((predictions - targets)**2)    
     
     
-def convert_str_to_pint(value: str) -> pint.Quantity:
-    """ Converts Comsol parameters to pint.Quantities.
 
-
-    Args:
-        value (str): Comsol parameter value (format is "Value[Unit]")
-
-    Returns:
-        pint.Quantity:
-    """
-    ureg = pint.UnitRegistry()
-    try:
-        if "[" in value:
-            splitted_value = value.split("[") 
-            numeric_value = float(splitted_value[0])
-            unit = splitted_value[1].split("]")[0]
-            return ureg.Quantity(numeric_value, unit).to_base_units()
-        else:
-            return float(value) * ureg("dimensionless")
-    except ValueError:
-        return value  # Return the original value if conversion fails
 
         
 
@@ -150,32 +89,6 @@ def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarr
     R2 = mean_squared_error(training_snapshots, training_predictions, multioutput='raw_values')  
     toShowR2 = np.average(R2)
     return toShowR2
-
-
-ureg = pint.UnitRegistry()
-preferred_units = {
-    ureg.Quantity(1, 'degree').dimensionality: 'degree',
-    ureg.Quantity(1, 'degC').dimensionality: 'degC',
-    ureg.Quantity(1, 'bar').dimensionality: 'bar',
-}
-
-def format_quantity(q: pint.Quantity) -> str:
-    """Display a pint.Quanitity as string in "value unit" format.
-    Additionally, preferred units are inserted for temperature, angles.
-
-    Args:
-        q (pint.Quantity): _description_
-
-    Returns:
-        str: _description_
-    """    
-    unit = preferred_units.get(q.dimensionality, q.units)
-    try:
-        q = q.to(unit)
-    except pint.errors.UndefinedUnitError:
-        pass  # Skip if conversion fails
-    return f"{q.magnitude:.2e} {q.units:~P}"
-
 
 
 

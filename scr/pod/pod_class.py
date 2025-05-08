@@ -40,6 +40,7 @@ class POD:
         """
         
         if self.is_time_dependent:
+            assert len(self.POD_snapshots.shape) == 3, "POD_snapshots must be in (n_snaps, n_time, n_points) format"
             basis_fts_matrix_time = []
             logging.info('Performing the singular value decomposition for the time-trajectory for every parameter')
             for snapshot in self.POD_snapshots:
@@ -51,6 +52,7 @@ class POD:
             return basis_fts_matrix, information_content
         
         else: # stationary - time-independent
+            assert len(self.POD_snapshots.shape) == 2, "POD_snapshots must be in (n_snaps, n_points) format"
             logging.info('Selecting the basis functions for the reduced basis...')
             basis_fts_matrix, information_content = self.select_basis_functions(self.POD_snapshots, accuracy)
             logging.info(f'Selected {len(information_content)} basis function.')

@@ -17,7 +17,7 @@ if __name__ == "__main__":
     PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
-    ACCURACY = 1e-5
+    ACCURACY = 1e-3 / 100
     
     # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0" / "Exports" / f"{DATA_TYPE}_temperatures.npy"
     import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures.npy"
@@ -33,7 +33,6 @@ if __name__ == "__main__":
     
     pod = POD(POD_snapshots=data_set_scaled, is_time_dependent=True)
     basis_fts_matrix, information_content = pod.perform_POD(accuracy=ACCURACY)
-    print(information_content)
     print(np.cumsum(information_content))
     
     np.save(export_folder / f"information_content_{ACCURACY:.1e}.npy", information_content)

@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.15.2",
     "tqdm>=4.67.1",
     "JPype1",
+    "vtk>=9.3.1",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +39,6 @@ jupyter = [
 
 [dependency-groups]
 dev = [
-    "vtk>=9.3.1",
     "autopep8>=2.3.2",
     "tensorboard>=2.19.0",
     "torchinfo>=1.8.0",
@@ -46,4 +46,14 @@ dev = [
     "optuna-dashboard>=0.18.0",
     "optuna-fast-fanova>=0.0.4",
     "gunicorn>=23.0.0",
+    "pytest>=8.3.5",
 ]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v -ra -q"
+log_cli = true
+log_cli_level = "INFO"
+log_format = "%(asctime)s %(levelname)s %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"

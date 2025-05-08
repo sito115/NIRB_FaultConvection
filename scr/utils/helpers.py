@@ -1,7 +1,7 @@
 import numpy as np
 from sklearn.metrics import mean_squared_error
 
-def min_max_scaler(data: np.ndarray) -> np.ndarray:
+def min_max_scaler(data: np.ndarray, min_val : float = None, max_val: float = None) -> np.ndarray:
     """Min-max scaler to scale the data between 0 and 1.
 
     Args:
@@ -10,8 +10,10 @@ def min_max_scaler(data: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: Scaled data.
     """
-    min_val = np.min(data)
-    max_val = np.max(data)
+    if min_val is None:
+        min_val = np.min(data)
+    if max_val is None:
+        max_val = np.max(data)
     return (data - min_val) / (max_val - min_val)
 
 

@@ -52,14 +52,21 @@ def delete_comsol_fields(comsol_data : COMSOL_VTU,
 
 def map_on_control_mesh(comsol_data : pv.PolyData,
                         control_mesh: vtk.vtkImageData) -> pv.ImageData:
-    """Map 
+    """Map on control mesh with a vtkProbeFilter
+    https://vtk.org/doc/nightly/html/classvtkProbeFilter.html
+    https://public.kitware.com/Wiki/Demystifying_the_vtkProbeFilter
+
+    VtkProbeFilter
+    For structured datasets (vtkImageData, vtkStructuredGrid), VTK uses trilinear interpolation based on the grid spacing and cell values.
+    For unstructured grids, interpolation is done using barycentric coordinates within the cell where the probe point lies. The field value is computed as a linear combination of the values at the cell's nodes.
+    If the probe point lies outside the source mesh, no interpolation is performed, and the vtkValidPointMask array marks the result as invalid.
 
     Args:
-        comsol_data (pv.PolyData): _description_
-        control_mesh (vtk.vtkImageData): _description_
+        comsol_data (pv.PolyData): Source mesh
+        control_mesh (vtk.vtkImageData): Control mesh
 
     Returns:
-        vtk.vtkImageData: _description_
+        pv.ImageData: Mapped data on control mesh.
     """    
     probe = vtk.vtkProbeFilter()
     probe.SetInputData(control_mesh)        # The grid where you want data
@@ -67,3 +74,28 @@ def map_on_control_mesh(comsol_data : pv.PolyData,
     probe.Update()
     interpolated = probe.GetOutput()
     return pv.wrap(interpolated)
+
+
+def inverse_distance_weighting(target_point: np.ndarray,
+                               neigbour_points: np.ndarray,
+                               neighbour_values: np.ndarray,
+                               beta: float = 2) -> float:
+    """Inverse distance weighting.
+
+    Args:
+        target_point (np.ndarray): (3,)
+        neigbour_points (np.ndarray): (N, 3)
+        neighbour_values (np.ndarray): (N, 3)
+        beta (float, optional): The inverse distance power, β, determines the degree to which the nearer point(s) are preferred over more distant points. Typically β=1 or β=2 corresponding to an inverse or inverse squared relationship.. Defaults to 2.
+
+    Returns:
+        float: interpolated value
+    """
+    # https://www.geo.fu-berlin.de/en/v/soga-py/Advanced-statistics/Spatial-Interpolation/Inverse-Distance-Weighting/index.html
+    distances = np.linalg.norm(target_point - neigbour_points, axis=1) # same as np.sqrt(np.sum((target_point - neigbour_points)**2, axis=1))
+    # If the point x coincides with an observation location (x=xi), then the observed value,x, is returned to avoid infinite weights.
+    zero_distance_indices = np.where(distances == 0)[0]
+    if zero_distance_indices.size > 0:
+        return neighbour_values[zero_distance_indices[0]]
+    weights = distances**(-beta)
+    return (np.sum(weights*neighbour_values))  / np.sum(weights)

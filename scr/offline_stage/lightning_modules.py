@@ -112,16 +112,13 @@ class ComputeR2OnTrainEnd(Callback):
 
 
 
-class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
+class OptunaPruning(L.pytorch.callbacks.early_stopping.EarlyStopping):
     
     def __init__(self,
                  trial: optuna.Trial,
-                 min_epochs: int = 5000,
                  **kwargs):
         super().__init__(**kwargs)
-        self.min_epochs = min_epochs
         self._trial = trial
-    
     
     def _process(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         """Enable Optuna pruning if one trial seems not promising.
@@ -141,10 +138,6 @@ class MyEarlyStopping(L.pytorch.callbacks.early_stopping.EarlyStopping):
                 "Please make sure you set the correct metric name.".format(self.monitor)
             )
             warnings.warn(message)
-            return
-        
-        # "Anealing Phase"
-        if current_epoch < self.min_epochs:
             return
         
         self._trial.report(current_score, step=current_epoch)

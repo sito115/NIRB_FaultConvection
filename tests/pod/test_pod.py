@@ -9,7 +9,8 @@ from scr.pod import POD
 
 
 def test_pod_time() -> None:
-    """Test my implementation of POD with the one from https://zenodo.org/records/8369108 / geothermal example.
+    """Test implementation of POD with the one from https://zenodo.org/records/8369108 / geothermal example.
+    Tolerance at machine episolon.
     """    
     root = Path(__file__).parent
     training_snapshots = np.load(root / "TrainingSnapshots.npy")
@@ -18,10 +19,13 @@ def test_pod_time() -> None:
     accuracy = 1e-5
     pod = POD(temperatures, is_time_dependent=True)
     basis_functions, _ = pod.perform_POD(accuracy)
-    npt.assert_allclose(basis_functions, expected_basis_function, atol=1e-15)
+    npt.assert_allclose(basis_functions, expected_basis_function, atol=1e-16)
     
     
 def test_pod_stationary() -> None:
+    """implementation of POD with the one from https://zenodo.org/records/13767010 / Benchmark / Stress XX
+    Tolerance at machine episolon.
+    """    
     root = Path(__file__).parent
     training_snapshots = np.load(root / "TrainingDataBoundaryConditionsStressXX_scaled_borehole.npy")
     expected_basis_function = np.load(root / "BoundaryConditionsStressXXBasisFts.npy")
@@ -29,7 +33,7 @@ def test_pod_stationary() -> None:
     accuracy = 1e-6
     pod = POD(stress[0], is_time_dependent=False)
     basis_functions, _ = pod.perform_POD(accuracy)
-    npt.assert_allclose(basis_functions, expected_basis_function[0], atol=1e-15)
+    npt.assert_allclose(basis_functions, expected_basis_function[0], atol=1e-16)
 
     
 if __name__ == "__main__":

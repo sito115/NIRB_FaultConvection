@@ -8,7 +8,7 @@ import numpy as np
 # Patch missing unit BEFORE using .quantify
 ureg = pint.UnitRegistry()
 ureg.define('radian = [angle] = rad')  # Fix the missing 'rad' (from COMSOL)
-preferred_units = {
+PREFERRED_UNITS = {
 ureg.Quantity(1, 'degree').dimensionality: 'degree',
 ureg.Quantity(1, 'degC').dimensionality: 'degC',
 ureg.Quantity(1, 'bar').dimensionality: 'bar',
@@ -35,6 +35,15 @@ def load_pint_data(path: Path, is_numpy = False, **kwargs) -> pd.DataFrame:
     return training_param
 
 
+def convert_to_preferred_unit(q: pint.Quantity) -> pint.Quantity:
+    unit = PREFERRED_UNITS.get(q.dimensionality, q.units)
+    try:
+        q = q.to(unit)
+    except pint.errors.UndefinedUnitError:
+        pass  # Skip if conversion fails
+    return q
+
+
 def format_quantity(q: pint.Quantity) -> str:
     """Display a pint.Quanitity as string in "value unit" format.
     Additionally, preferred units are inserted for temperature, angles.
@@ -45,11 +54,7 @@ def format_quantity(q: pint.Quantity) -> str:
     Returns:
         str: e.g. "2.02e01 K"
     """    
-    unit = preferred_units.get(q.dimensionality, q.units)
-    try:
-        q = q.to(unit)
-    except pint.errors.UndefinedUnitError:
-        pass  # Skip if conversion fails
+    q = convert_to_preferred_unit(q)
     return f"{q.magnitude:.2e} {q.units:~P}"
 
 

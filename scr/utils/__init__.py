@@ -1,7 +1,7 @@
 from .helpers import (
-    min_max_scaler, 
-    inverse_min_max_scaler,
-    standardize,
+    Q2_metric,
+    R2_metric,
+    plot_data
 )
 
 from .pint_units import(
@@ -9,6 +9,8 @@ from .pint_units import(
     load_pint_data,
     format_quantity, 
     safe_parse_quantity,
+    PREFERRED_UNITS,
+    convert_to_preferred_unit
 )
 
 from .geometry import(

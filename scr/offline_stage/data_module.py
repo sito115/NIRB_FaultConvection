@@ -1,7 +1,12 @@
 import numpy as np
-from scr.utils.helpers import standardize, min_max_scaler
+from scr.pod.normalizer import standardize, MeanNormalizer, MinMaxNormalizer, Standardizer
 from torch.utils.data import TensorDataset, DataLoader
 import torch
+from enum import Enum
+
+class Normalizations(Enum):
+    MinMax = "MinMax"
+    Mean   = "Mean"
 
 class NirbDataModule():
     def __init__(self,
@@ -10,7 +15,8 @@ class NirbDataModule():
                  training_param: np.ndarray,
                  test_snaps: np.ndarray = None,
                  test_param: np.ndarray = None,
-                 batch_size: int = 20):
+                 batch_size: int = 20,
+                 normalizer : Normalizations = Normalizations.MinMax):
         """Data Module for NIRB.
 
         Args:
@@ -20,6 +26,7 @@ class NirbDataModule():
             test_snaps (np.ndarray, optional): _description_. Defaults to None. (n_snaps x n_points)
             test_param (np.ndarray, optional): _description_. Defaults to None. (n_snaps x n_parameters)
             batch_size (int, optional): _description_. Defaults to 20.
+            normalizer (Normalizations): Normalizer for Snapshots. Defaults to MinMaxNormalizer():
         """
         self.basis_func_mtrx = basis_func_mtrx 
         self.training_snaps = training_snaps 
@@ -27,22 +34,30 @@ class NirbDataModule():
         self.test_snaps = test_snaps 
         self.test_param = test_param 
         self.batch_size = batch_size 
+
+        # Initialize the corresponding normalizer class based on the enum value
+        if normalizer == Normalizations.MinMax:
+            self.normalizer = MinMaxNormalizer()
+        elif normalizer == Normalizations.Mean:
+            self.normalizer = MeanNormalizer()
+        else:
+            raise ValueError(f"Unknown normalizer type: {normalizer}")
+
         
-        self.mean = np.mean(self.training_param, axis=0)
-        self.var = np.var(self.training_param, axis=0)
+        self.standardizer = Standardizer() # for parameters
         self.compute_coefficients()
         self.setup()
 
     def compute_coefficients(self) -> None:
         """Calculcates the coefficients (output of NN) for training and test.
         """        
-        self.training_param_scaled = standardize(self.training_param, self.mean, self.var)
-        self.training_snaps_scaled = min_max_scaler(self.training_snaps)
+        self.training_param_scaled = self.standardizer.normalize(self.training_param, keep_scaling_params=True)
+        self.training_snaps_scaled = self.normalizer.normalize(self.training_snaps, keep_scaling_params=True)
         self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps_scaled.T).T
         if self.test_param is not None:
-            self.test_param_scaled = standardize(self.test_param, self.mean, self.var)
+            self.test_param_scaled = self.standardizer.normalize(self.test_param)
         if self.test_snaps is not None:
-            self.test_snaps_scaled = min_max_scaler(self.test_snaps)
+            self.test_snaps_scaled = self.normalizer.normalize(self.test_snaps)
             self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
 
     def setup(self) -> None:
@@ -65,3 +80,5 @@ class NirbDataModule():
         return DataLoader(self.dataset_test,
                           batch_size=len(self.dataset_test),  # All in one batch
                           **kwargs)
+        
+        

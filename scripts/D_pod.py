@@ -8,8 +8,7 @@ from pathlib import Path
 import logging
 import sys
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.utils import min_max_scaler
-from scr.pod import POD
+from scr.pod import POD, MinMaxNormalizer, MeanNormalizer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
@@ -17,7 +16,9 @@ if __name__ == "__main__":
     PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
-    ACCURACY = 1e-3 / 100
+    ACCURACY = 1e-3
+    IS_EXPORT = True
+    SUFFIX = "mean"
     
     # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0" / "Exports" / f"{DATA_TYPE}_temperatures.npy"
     import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures.npy"
@@ -28,13 +29,22 @@ if __name__ == "__main__":
     # temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
     temperatures = np.load(import_path)
     
-    data_set = temperatures[:, -1:, :] # last time step
-    data_set_scaled = min_max_scaler(data_set)
+    if PARAMETER_SPACE == "02":
+        for idx in [41, 62, 87]:
+            temperatures[idx, -1, :] = temperatures[idx, 10, :]
+
+    data_set = temperatures[:, -1, :] #- temperatures[:, 0, :] # last time step
+    # assert np.all(data_set > 1)
+    # data_set = data_set - temperatures[:, 0, :]
+    normalizer = MeanNormalizer()
+    data_set_scaled = normalizer.normalize(data_set, keep_scaling_params=True)
     
-    pod = POD(POD_snapshots=data_set_scaled, is_time_dependent=True)
+    pod = POD(POD_snapshots=data_set_scaled, is_time_dependent=False) # is_time_dependent=False bei letztem Zeitschritt 
     basis_fts_matrix, information_content = pod.perform_POD(accuracy=ACCURACY)
     print(np.cumsum(information_content))
     
-    np.save(export_folder / f"information_content_{ACCURACY:.1e}.npy", information_content)
-    np.save(export_folder / f"basis_fts_matrix_{ACCURACY:.1e}.npy", basis_fts_matrix)
-    np.save(export_folder / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))
+    if IS_EXPORT:
+        np.save(export_folder / (f"information_content_{ACCURACY:.1e}" + SUFFIX + ".npy"), information_content)
+        np.save(export_folder / (f"basis_fts_matrix_{ACCURACY:.1e}" + SUFFIX + ".npy"), basis_fts_matrix)
+        np.save(export_folder / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))
+        logging.info(f"Exported {len(basis_fts_matrix)} Basis Functions!")

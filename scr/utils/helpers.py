@@ -1,51 +1,7 @@
 import numpy as np
 from sklearn.metrics import mean_squared_error
-
-def min_max_scaler(data: np.ndarray, min_val : float = None, max_val: float = None) -> np.ndarray:
-    """Min-max scaler to scale the data between 0 and 1.
-
-    Args:
-        data (np.ndarray): Data to be scaled.
-
-    Returns:
-        np.ndarray: Scaled data.
-    """
-    if min_val is None:
-        min_val = np.min(data)
-    if max_val is None:
-        max_val = np.max(data)
-    return (data - min_val) / (max_val - min_val)
-
-
-def inverse_min_max_scaler(data: np.ndarray, min_val: float, max_val: float) -> np.ndarray:
-    """Inverse min-max scaler to scale the data back to its original range.
-
-    Args:
-        data (np.ndarray): Data to be scaled back.
-        min_val (float): Minimum value of the original data.
-        max_val (float): Maximum value of the original data.
-
-    Returns:
-        np.ndarray: Scaled back data.
-    """
-    return data * (max_val - min_val) + min_val
-
-        
-def standardize(array: np.ndarray, mean:np.ndarray, var:np.ndarray) -> np.ndarray:
-    """This function subtracts the mean and divides by the square root of the variance
-    for each element, effectively transforming the input to have zero mean and unit variance.
-
-    Args:
-        array (np.ndarray): _description_
-        mean (np.ndarray): _description_
-        var (np.ndarray): _description_
-
-    Returns:
-        np.ndarray: _description_
-    """    
-    
-    return (array - mean)/np.sqrt(var)
-
+from matplotlib import pyplot as plt
+from pathlib import Path
 
 def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     """Compute the Mean Squared Error (MSE) between predictions and targets.
@@ -60,8 +16,31 @@ def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     return np.mean((predictions - targets)**2)    
     
     
+def plot_data(data: np.ndarray, **kwargs):
+    """_summary_
 
-
+    Args:
+        data (np.ndarray): _description_
+        title (str): _description_
+        export_path (Path): _description_
+    """    
+    fig, ax = plt.subplots(figsize = (12, 4))
+    n_points = np.arange(data.shape[1])
+    for array in data:
+        ax.step(n_points,
+                array,
+                alpha = 0.5,
+                linewidth = 0.5)
+    title_string = kwargs.pop("title", "")
+    export_path : Path = kwargs.pop("export_path", None)
+    ax.set_xlabel("Point ID")
+    ax.set_ylabel("Temperature [K]")
+    ax.set_title(title_string)
+    ax.grid()
+    if export_path is not None:
+        assert export_path.parent.exists()
+        fig.savefig(export_path)
+    plt.close(fig)
         
 
 def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> float:
@@ -91,8 +70,6 @@ def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarr
     R2 = mean_squared_error(training_snapshots, training_predictions, multioutput='raw_values')  
     toShowR2 = np.average(R2)
     return toShowR2
-
-
 
 if __name__ == "__main__":
     pass

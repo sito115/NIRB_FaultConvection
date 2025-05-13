@@ -30,12 +30,16 @@ def main():
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "03"
-    DATA_TYPE = "Training"
-    data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TrainingMapped" / "s50_50_50_b0_4000_0_5000_-4000_0") # data_type) #"Truncated") # data_type)
+    PARAMETER_SPACE = "01"
+    DATA_TYPE = "Test"
+    # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
+    data_folder = ROOT / "data" / PARAMETER_SPACE /  "TestMapped"
     
+    assert DATA_TYPE.lower() in str(data_folder).lower()
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    export_folder = data_folder # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
+    # export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
+    # export_folder.mkdir(exist_ok=True)
+    export_folder = data_folder 
     # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])
@@ -52,11 +56,6 @@ def main():
     if IS_EXPORT_JOBLIB:
         temperatures = [np.array([]) for _ in range(len(vtu_files))]
         temperatures_diff =  [np.array([]) for _ in range(len(vtu_files))]
-
-    
-    # indices = [33, 37, 41, 45, 48, 49, 50, 52, 53] # PS01
-    # indices = [11, 77, 27, 35, 68, 92, 6, 85, 36, 99, 93] # PS02
-    # vtu_files = [vtu_files[i] for i in indices]
     
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         idx = int(vtu_file.stem.split("_")[1])
@@ -118,7 +117,7 @@ def main():
 
     if IS_EXPORT_NPY:
         np.save(export_folder / f"{DATA_TYPE}_temperatures.npy", temperatures)
-        np.save(export_folder / f"{DATA_TYPE}_temperatures_diff.npy", temperatures_diff )
+        np.save(export_folder / f"{DATA_TYPE}_temperatures_minus_tgrad.npy", temperatures_diff )
         
     if IS_EXPORT_JOBLIB:
         dump(temperatures,export_folder / f"{DATA_TYPE}_temperatures.joblib")

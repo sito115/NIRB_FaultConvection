@@ -26,8 +26,8 @@ class NirbModule(L.LightningModule):
         self.msa_metric = MeanAbsoluteError()
         self.save_hyperparameters(ignore=['activation'])
         self.test_snaps_scaled : np.ndarray = None
+        self.val_snaps_scaled : np.ndarray = None
         self.basis_functions : np.ndarray = None
-        self.train_loss : float = None
         
     def forward(self, x):
         return self.model(x)
@@ -47,12 +47,11 @@ class NirbModule(L.LightningModule):
                       on_epoch=True,
                       logger=True,
                       sync_dist=True)
-        self.train_loss = loss.item()
         return loss
     
     
-    def test_step(self, test_batch, batch_idx):
-        x, y = test_batch
+    def test_step(self, batch, batch_idx):
+        x, y = batch
         y_hat = self.forward(x)
         loss = self.loss(y_hat, y)
         
@@ -68,8 +67,22 @@ class NirbModule(L.LightningModule):
         self.log_dict(metrics)
 
         
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self.forward(x)        
+        y_hat_cpu = y_hat.detach().cpu().numpy()
+        loss = self.loss(y_hat, y)  # loss(input, target)
+        metrics = {"val_loss": loss}
+        if self.val_snaps_scaled is not None and self.basis_functions is not None:
+            full_solution_test = np.matmul(y_hat_cpu, self.basis_functions)
+            q2_metric = Q2_metric(self.val_snaps_scaled, full_solution_test)
+            metrics["Q2_val"] = q2_metric
+        self.log_dict(metrics)
+    
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         return self(batch)
+    
+    
 
 
 class ComputeR2OnTrainEnd(Callback):
@@ -116,9 +129,11 @@ class OptunaPruning(L.pytorch.callbacks.early_stopping.EarlyStopping):
     
     def __init__(self,
                  trial: optuna.Trial,
+                 check_val_every_n_epoch : int = 1,
                  **kwargs):
         super().__init__(**kwargs)
         self._trial = trial
+        self.check_val_every_n_epoch = check_val_every_n_epoch
     
     def _process(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         """Enable Optuna pruning if one trial seems not promising.
@@ -145,9 +160,11 @@ class OptunaPruning(L.pytorch.callbacks.early_stopping.EarlyStopping):
             message = "Trial was pruned at epoch {}.".format(current_epoch)
             raise optuna.TrialPruned(message)    
     
-    def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule):
-        # Check only at the end of each training epoch
-        return self._process(trainer, pl_module)
+    def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        # Only call pruning check when validation occurs
+        current_epoch = pl_module.current_epoch
+        if current_epoch % self.check_val_every_n_epoch == 0:  # Check only on validation epochs
+            self._process(trainer, pl_module)
 
 
     def on_validation_end(self, trainer, pl_module):

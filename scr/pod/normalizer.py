@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, Protocol
+from typing import Protocol
 
 class Normalizer(Protocol):
     def normalize(self, data : np.ndarray, keep_scaling_params: bool) -> np.ndarray:
@@ -12,6 +12,9 @@ class Normalizer(Protocol):
 
 
 class MinMaxNormalizer:
+    """
+    Scales the input data to the range [0, 1] using min-max normalization.
+    """  
     def __init__(self):
         self.scaling_params = None
         
@@ -32,6 +35,10 @@ class MinMaxNormalizer:
         return inverse_min_max_scaler(data, **self.scaling_params)
 
 class MeanNormalizer:
+    """
+    Normalizes the input data using mean normalization, scaling it to have a mean of 0 
+    and a range typically between -1 and 1.
+    """
     def __init__(self):
         self.scaling_params = None
 
@@ -167,13 +174,6 @@ def inverse_mean_normalization(data, min_val: float, max_val: float, mean_val: f
     """
     data = np.asarray(data)
     return data * (max_val - min_val) + mean_val
-
-
-
-
-
-
-
 
 
 def standardize(array: np.ndarray, mean:np.ndarray, var:np.ndarray) -> np.ndarray:

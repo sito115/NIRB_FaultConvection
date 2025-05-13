@@ -1,6 +1,7 @@
 import numpy as np
-from scr.pod.normalizer import standardize, MeanNormalizer, MinMaxNormalizer, Standardizer
-from torch.utils.data import TensorDataset, DataLoader
+from scr.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
+from typing import List
+from torch.utils.data import TensorDataset, DataLoader, Subset
 import torch
 from enum import Enum
 
@@ -81,4 +82,16 @@ class NirbDataModule():
                           batch_size=len(self.dataset_test),  # All in one batch
                           **kwargs)
         
-        
+    def validation_dataloader(self, test_idx : List[int] = np.arange(10), **kwargs) -> DataLoader:
+        """_summary_
+
+        Args:
+            test_idx (List[int], optional): List of indices of test_snapshots to be validated. Defaults to np.arange(10).
+
+        Returns:
+            DataLoader: 
+        """        
+        subset = Subset(self.dataset_test, test_idx)
+        return DataLoader(subset,
+                          batch_size=len(test_idx), # All in one batch
+                          **kwargs)

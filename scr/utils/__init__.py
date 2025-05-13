@@ -1,7 +1,10 @@
 from .helpers import (
     Q2_metric,
     R2_metric,
-    plot_data
+    plot_data,
+    calculate_thermal_entropy_generation,
+    setup_logger,
+    format_comsol_unit
 )
 
 from .pint_units import(

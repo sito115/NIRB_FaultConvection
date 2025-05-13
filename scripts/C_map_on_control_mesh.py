@@ -10,10 +10,9 @@ sys.path.append(str(Path(__file__).parents[1]))
 from scr.utils import (create_control_mesh,
                        map_on_control_mesh,
                        delete_comsol_fields,
-                       inverse_distance_weighting)
+                       inverse_distance_weighting,
+                       setup_logger)
 from scr.comsol_module.comsol_classes import COMSOL_VTU
-from tqdm import tqdm
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
 def handle_invalid_point_mask(target_point: np.ndarray,
@@ -35,14 +34,16 @@ def handle_invalid_point_mask(target_point: np.ndarray,
 
 def main():   
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "01"
-    DATA_TYPE = "Test"
+    PARAMETER_SPACE = "03"
+    DATA_TYPE = "Training"
     FIELD_TO_EXPORT : str = "Temperature"
     SPACING = (100, 100, 100) # dx, dy, dz
     DECIMAL_TOLERANCE = 1
+    
 
-    data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "Test") # data_type) #"Truncated") # data_type)    
+    data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "Training_Original") # data_type) #"Truncated") # data_type)    
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
+    assert DATA_TYPE.lower() in data_folder.name.lower()
     export_folder =  data_folder.parent / (DATA_TYPE + "Mapped")
     export_folder.mkdir(exist_ok=True)
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
@@ -51,31 +52,34 @@ def main():
     # Find vtu files of original snapshots
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
     
-    original_mesh_path = Path("/Users/thomassimader/Documents/NIRB/data/01/Training/Training_000.vtu")
+    # FOR PS 01
+    # original_mesh_path = Path("/Users/thomassimader/Documents/NIRB/data/01/Training/Training_000.vtu")
+    # original_comsol_bounds = COMSOL_VTU(original_mesh_path).mesh.bounds
+    # control_mesh = COMSOL_VTU(original_mesh_path).mesh
+    # control_mesh.clear_data()
     
-    original_comsol_bounds = COMSOL_VTU(original_mesh_path).mesh.bounds
-    
-    # control_mesh = create_control_mesh(original_comsol_bounds,
-    #                                    SPACING)
-    control_mesh = COMSOL_VTU(original_mesh_path).mesh
-    control_mesh.clear_data()
+    original_comsol_bounds = COMSOL_VTU(vtu_files[0]).mesh.bounds
+    logging.debug(f"{original_comsol_bounds=}")
+    control_mesh = create_control_mesh(original_comsol_bounds,
+                                       SPACING)
+
     
     # Clip bounds of control mesh to avoid interpolation errors
     logging.debug(f"Old bounds of control mesh: {control_mesh.bounds}")
     logging.debug(f"Old n_points of control mesh: {control_mesh.n_points}")
     bbox = pv.Box(np.trunc(original_comsol_bounds)) # converts image data to unstructered grid
     control_mesh = control_mesh.clip_box(bbox, invert=False)
-    logging.debug(f"New bounds of control mesh: {control_mesh.bounds}")
-    logging.debug(f"New n_points of control mesh: {control_mesh.n_points}")
+    logging.debug(f"New bounds of control mesh after clipping: {control_mesh.bounds}")
+    logging.debug(f"New n_points of control mesh after clipping: {control_mesh.n_points}")
     
     # create export folder with spacing and bounds information
     spacing_str = '_'.join(f"{x:.0f}" for x in SPACING)
     bounds_str = '_'.join(f"{x:.0f}" for x in (control_mesh.bounds))
     export_folder = export_folder / f"s{spacing_str}_b{bounds_str}"
     export_folder.mkdir(exist_ok=True)
-    
-    
-    for vtu_path in tqdm(vtu_files, total=len(vtu_files), desc="Mapping last time step on control mesh"):
+    setup_logger(is_console=True, log_file = export_folder / "mapping.log")
+
+    for vtu_path in vtu_files:
         logging.debug(f"Mapping {vtu_path.name}")
         comsol_data = COMSOL_VTU(vtu_path)
         
@@ -115,7 +119,7 @@ def main():
     
     
     total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".vtu")  / (1024 * 1024)
-    print(f"Total size of all mapped .vtu files: {total_size} MB")
+    logging.info(f"Total size of all mapped .vtu files: {total_size} MB")
 
 if __name__ == "__main__":
     main()

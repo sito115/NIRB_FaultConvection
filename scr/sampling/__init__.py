@@ -1,1 +1,1 @@
-from parameter_class import Parameter
+from .parameter_class import Parameter

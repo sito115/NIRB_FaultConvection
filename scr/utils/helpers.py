@@ -45,7 +45,7 @@ def plot_data(data: np.ndarray, **kwargs):
     if export_path is not None:
         assert export_path.parent.exists()
         fig.savefig(export_path)
-    plt.close(fig)
+    plt.close("all")
         
 
 def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> float:
@@ -60,7 +60,7 @@ def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> floa
     """
     Q2 = mean_squared_error(test_snapshots, test_predictions, multioutput='raw_values')  
     # TODO: why mutliplied with - 1 in source code? 
-    toReturnQ2 = np.abs(np.average(Q2)) #*(-1)  
+    toReturnQ2 = np.average(Q2) #*(-1)  
     return toReturnQ2
 
 def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarray) -> float:

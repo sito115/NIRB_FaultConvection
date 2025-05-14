@@ -16,12 +16,12 @@ if __name__ == "__main__":
     PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
-    ACCURACY = 1e-7
+    ACCURACY = 1e-5
     IS_EXPORT = True
-    SUFFIX = "min_max_init"
+    SUFFIX = "mean_init"
     
     # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0" / "Exports" / f"{DATA_TYPE}_temperatures.npy"
-    import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures.npy"
+    import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures_minus_tgrad.npy"
     export_folder = import_path.parent.parent.joinpath("BasisFunctions")
     export_folder.mkdir(exist_ok=True)
     assert import_path.exists()
@@ -33,17 +33,16 @@ if __name__ == "__main__":
         for idx in [41, 62, 87]:
             temperatures[idx, -1, :] = temperatures[idx, 10, :]
 
-    data_set = temperatures[:, -1, :] - temperatures[:, 0, :]
+    data_set = temperatures[:, -1, :]
     # assert np.all(data_set > 1)
     # data_set = data_set - temperatures[:, 0, :]
-    if "mean" in SUFFIX:
+    if "mean" in SUFFIX.lower():
         normalizer = MeanNormalizer()
-    elif "min_max" in SUFFIX:
+    elif "min_max" in SUFFIX.lower():
         normalizer = MinMaxNormalizer()
-        if IS_EXPORT:
-            np.save(export_folder / "min_max.npy", np.array([np.min(data_set), np.max(data_set)]))
     else:
         raise ValueError("Please check suffix")
+    logging.info(f"{normalizer=}")
     data_set_scaled = normalizer.normalize(data_set, keep_scaling_params=True)
     
     pod = POD(POD_snapshots=data_set_scaled, is_time_dependent=False) # is_time_dependent=False bei letztem Zeitschritt 

@@ -8,16 +8,16 @@ from optuna.trial import TrialState
 import numpy as np
 import sys 
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning
+from scr.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning, Normalizations
 from scr.utils import load_pint_data
 
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
-    hidden1 = trial.suggest_int("hiden1", low = 2, high = 50)
-    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 5)
+    hidden1 = trial.suggest_int("hiden1", low = 2, high = 100)
+    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 6)
     hidden_layers_betw = [
-        trial.suggest_int(f"hidden_layers_betw{i}", 25, 400, step=2)
+        trial.suggest_int(f"hidden_layers_betw{i}", 50, 300, step=2)
         for i in range(num_inbetw_layers)
     ]
     
@@ -29,7 +29,7 @@ def objective(trial: optuna.Trial) -> float:
     lr = trial.suggest_float("lr", 5e-6, 1e-3, log=True)
     batch_size = trial.suggest_int("batch_size", 20, 100)
 
-    activation_name = "sigmoid" # trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
+    activation_name = trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -40,17 +40,18 @@ def objective(trial: optuna.Trial) -> float:
         activation_fn = nn.Tanh()
 
 
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
     assert ROOT.exists(), f"Not found: {ROOT}"
     
     ### PS01
-    basis_func_path = ROOT  / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{suffix}.npy"
+    basis_func_path = ROOT  / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
     train_snapshots_path = ROOT / "TrainingMapped"  / "Training_temperatures.npy"
     test_snapshots_path = ROOT / "TestMapped" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-    # ### PS03
-    # basis_func_path = ROOT / "TrainingMapped"      / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{suffix}.npy"
+    
+    # # ### PS03
+    # control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
+    # basis_func_path = ROOT / "TrainingMapped"      / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
     # train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
     # test_snapshots_path = ROOT / "TestMapped"      / control_mesh_suffix / "Exports" / "Test_temperatures.npy"
     # train_param_path = ROOT / "training_samples.csv"
@@ -66,6 +67,12 @@ def objective(trial: optuna.Trial) -> float:
     training_snapshots = training_snapshots[:, -1, :] # last time step
     test_snapshots = test_snapshots[:, -1, :] # last time step
 
+    if "mean" in SUFFIX.lower():
+        scaling = Normalizations.Mean
+    if "min_max" in SUFFIX.lower():
+        scaling = Normalizations.MinMax
+
+
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
         training_snaps=training_snapshots,
@@ -73,6 +80,7 @@ def objective(trial: optuna.Trial) -> float:
         test_snaps=test_snapshots,
         test_param=test_parameters,
         batch_size=batch_size,
+        normalizer=scaling,
     )
     
     n_inputs = training_parameters.shape[1]
@@ -124,10 +132,10 @@ if __name__ == "__main__":
     N_EPOCHS = 15_000 #20_000
     ACCURACY = 1e-5
     ROOT = Path(__file__).parents[1] / "data" / "01"
-    suffix = "min_max"
+    SUFFIX = "mean"
     check_val_every_n_epoch = 100  
     assert ROOT.exists(), f"Not found: {ROOT}"
-    db_path = ROOT /f"db_{ACCURACY:.1e}{suffix}.sqlite3"
+    db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
         "study_name": "sweep_Q2",

@@ -15,19 +15,21 @@ class NirbModule(L.LightningModule):
                  hidden_units: List[int],
                  n_outputs: int,
                  activation = nn.Sigmoid(),
-                 learning_rate : float = 1e-3):
+                 learning_rate : float = 1e-3,
+                 batch_size : int = 20):
         super().__init__()
     
         self.learning_rate = learning_rate
         self.loss = nn.MSELoss()
         self.activation = activation
         self.model = NIRB_NN(n_inputs, hidden_units, n_outputs, self.activation)
-        
+        self.batch_size = batch_size
         self.msa_metric = MeanAbsoluteError()
         self.save_hyperparameters(ignore=['activation'])
         self.test_snaps_scaled : np.ndarray = None
         self.val_snaps_scaled : np.ndarray = None
         self.basis_functions : np.ndarray = None
+        self.validation_step_outputs = []
         
     def forward(self, x):
         return self.model(x)
@@ -63,20 +65,27 @@ class NirbModule(L.LightningModule):
             full_solution_test = np.matmul(y_hat.detach().numpy(), self.basis_functions)
             q2_metric = Q2_metric(self.test_snaps_scaled, full_solution_test)
             metrics["Q2"] = q2_metric
+            metrics["hp_metric"] = q2_metric
         
         self.log_dict(metrics)
 
-        
+
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self.forward(x)        
         y_hat_cpu = y_hat.detach().cpu().numpy()
         loss = self.loss(y_hat, y)  # loss(input, target)
         metrics = {"val_loss": loss}
-        if self.val_snaps_scaled is not None and self.basis_functions is not None:
-            full_solution_test = np.matmul(y_hat_cpu, self.basis_functions)
-            q2_metric = Q2_metric(self.val_snaps_scaled, full_solution_test)
-            metrics["Q2_val"] = q2_metric
+        if self.basis_functions is not None:
+            if y_hat_cpu.shape[0] == self.val_snaps_scaled.shape[0]: ## Only compute Q2 if batch size and len validation snaps are the same (only when devices cpu = 1, otherwise it results in an error)
+                full_solution_test = np.matmul(y_hat_cpu, self.basis_functions)
+                q2_metric = Q2_metric(self.val_snaps_scaled, full_solution_test)
+                metrics["Q2_val"] = q2_metric
+            else:
+                full_solution_test = np.matmul(y_hat_cpu, self.basis_functions)
+                validation_snaps_truncated = np.matmul(y.detach().cpu().numpy(), self.basis_functions)
+                q2_metric = Q2_metric(validation_snaps_truncated, full_solution_test)
+                metrics["Q2_val_trunc"] = q2_metric
         self.log_dict(metrics)
     
     def predict_step(self, batch, batch_idx, dataloader_idx=0):

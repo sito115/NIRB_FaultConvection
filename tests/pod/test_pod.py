@@ -4,7 +4,7 @@ import numpy.testing as npt
 from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parents[2]))
-from scr.pod import POD
+from src.pod import POD
 
 
 

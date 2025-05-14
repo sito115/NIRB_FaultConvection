@@ -12,9 +12,9 @@ from tqdm import tqdm
 import sys
 from joblib import dump 
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.comsol_module.comsol_classes import COMSOL_VTU
-from scr.comsol_module.helper import calculate_normal
-from scr.utils import (load_pint_data,
+from src.comsol_module.comsol_classes import COMSOL_VTU
+from src.comsol_module.helper import calculate_normal
+from src.utils import (load_pint_data,
                        format_quantity,
                        convert_str_to_pint)
 

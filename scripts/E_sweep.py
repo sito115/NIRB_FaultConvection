@@ -8,8 +8,8 @@ from optuna.trial import TrialState
 import numpy as np
 import sys 
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning, Normalizations
-from scr.utils import load_pint_data
+from src.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning, Normalizations
+from src.utils import load_pint_data
 
 
 def objective(trial: optuna.Trial) -> float:

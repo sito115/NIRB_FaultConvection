@@ -15,7 +15,7 @@ import pint_pandas
 import pint # noqa: F401
 import sys
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.sampling import Parameter
+from src.sampling import Parameter
 
 
 

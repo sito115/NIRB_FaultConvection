@@ -13,8 +13,8 @@ import pint # noqa: F401
 import pint_pandas
 import sys
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.MPh import mph
-from scr.utils import setup_logger, format_comsol_unit
+from src.MPh import mph
+from src.utils import setup_logger, format_comsol_unit
 
     
 def training_loop():

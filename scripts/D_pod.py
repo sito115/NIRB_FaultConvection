@@ -8,7 +8,7 @@ from pathlib import Path
 import logging
 import sys
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.pod import POD, MinMaxNormalizer, MeanNormalizer
+from src.pod import POD, MinMaxNormalizer, MeanNormalizer
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 

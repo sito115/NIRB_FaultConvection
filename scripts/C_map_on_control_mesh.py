@@ -7,12 +7,12 @@ import numpy as np
 import pyvista as pv
 from pathlib import Path
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.utils import (create_control_mesh,
+from src.utils import (create_control_mesh,
                        map_on_control_mesh,
                        delete_comsol_fields,
                        inverse_distance_weighting,
                        setup_logger)
-from scr.comsol_module.comsol_classes import COMSOL_VTU
+from src.comsol_module.comsol_classes import COMSOL_VTU
 
 
 def handle_invalid_point_mask(target_point: np.ndarray,

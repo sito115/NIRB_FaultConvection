@@ -15,8 +15,8 @@ import numpy as np
 from pathlib import Path
 import sys
 sys.path.append(str(Path(__file__).parents[1]))
-from scr.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd, Normalizations
-from scr.utils import load_pint_data, plot_data
+from src.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd, Normalizations
+from src.utils import load_pint_data, plot_data
 
 
 def main():

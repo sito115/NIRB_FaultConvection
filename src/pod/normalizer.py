@@ -16,9 +16,9 @@ class MinMaxNormalizer:
     Scales the input data to the range [0, 1] using min-max normalization.
     """  
     def __init__(self):
-        self.scaling_params = None
+        self.scaling_params = {}
         
-    def normalize(self, data: np.ndarray, keep_scaling_params: bool = False) -> np.ndarray:
+    def normalize(self, data: np.ndarray, keep_scaling_params: bool = True) -> np.ndarray:
         if keep_scaling_params:
             min_val = np.min(data)
             max_val = np.max(data)
@@ -40,9 +40,9 @@ class MeanNormalizer:
     and a range typically between -1 and 1.
     """
     def __init__(self):
-        self.scaling_params = None
+        self.scaling_params = {}
 
-    def normalize(self, data: np.ndarray, keep_scaling_params: bool = False) -> np.ndarray:
+    def normalize(self, data: np.ndarray, keep_scaling_params: bool = True) -> np.ndarray:
         if keep_scaling_params:
             min_val = np.min(data)
             max_val = np.max(data)
@@ -63,9 +63,9 @@ class MeanNormalizer:
 
 class Standardizer:
     def __init__(self):
-        self.scaling_params = None
+        self.scaling_params = {}
         
-    def normalize(self, data: np.ndarray, keep_scaling_params: bool = False) -> np.ndarray:
+    def normalize(self, data: np.ndarray, keep_scaling_params: bool = True) -> np.ndarray:
         if keep_scaling_params:
             mean = np.mean(data, axis=0)
             var = np.var(data, axis=0)

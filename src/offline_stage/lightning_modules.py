@@ -4,7 +4,7 @@ from typing import List
 from torch import nn
 import torch
 from .neural_network import NIRB_NN
-from scr.utils.helpers import R2_metric, Q2_metric
+from src.utils.helpers import R2_metric, Q2_metric
 import numpy as np
 from torchmetrics import MeanAbsoluteError
 import optuna
@@ -29,7 +29,8 @@ class NirbModule(L.LightningModule):
         self.test_snaps_scaled : np.ndarray = None
         self.val_snaps_scaled : np.ndarray = None
         self.basis_functions : np.ndarray = None
-        self.validation_step_outputs = []
+        self.train_loss : float = None
+        
         
     def forward(self, x):
         return self.model(x)
@@ -49,6 +50,7 @@ class NirbModule(L.LightningModule):
                       on_epoch=True,
                       logger=True,
                       sync_dist=True)
+        self.train_loss = loss
         return loss
     
     
@@ -138,11 +140,11 @@ class OptunaPruning(L.pytorch.callbacks.early_stopping.EarlyStopping):
     
     def __init__(self,
                  trial: optuna.Trial,
-                 check_val_every_n_epoch : int = 1,
+                 check_val_every_n_steps : int = 1,
                  **kwargs):
         super().__init__(**kwargs)
         self._trial = trial
-        self.check_val_every_n_epoch = check_val_every_n_epoch
+        self.check_val_every_n_steps = check_val_every_n_steps
     
     def _process(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         """Enable Optuna pruning if one trial seems not promising.
@@ -154,7 +156,7 @@ class OptunaPruning(L.pytorch.callbacks.early_stopping.EarlyStopping):
         Raises:
             optuna.TrialPruned: This error tells a trainer that the current ~optuna.trial.Trial was pruned. 
         """        
-        current_epoch = pl_module.current_epoch
+        current_step = pl_module.global_step
         current_score = trainer.callback_metrics.get(self.monitor)
         if current_score is None:
             message = (
@@ -164,15 +166,15 @@ class OptunaPruning(L.pytorch.callbacks.early_stopping.EarlyStopping):
             warnings.warn(message)
             return
         
-        self._trial.report(current_score, step=current_epoch)
+        self._trial.report(current_score, step=current_step)
         if self._trial.should_prune():
-            message = "Trial was pruned at epoch {}.".format(current_epoch)
+            message = "Trial was pruned at epoch {}.".format(current_step)
             raise optuna.TrialPruned(message)    
     
     def on_train_epoch_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         # Only call pruning check when validation occurs
-        current_epoch = pl_module.current_epoch
-        if current_epoch % self.check_val_every_n_epoch == 0:  # Check only on validation epochs
+        current_step = pl_module.global_step
+        if current_step % self.check_val_every_n_steps == 0:  # Check only on validation epochs
             self._process(trainer, pl_module)
 
 

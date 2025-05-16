@@ -15,6 +15,7 @@ ureg.Quantity(1, 'bar').dimensionality: 'bar',
 }
 # Register globally for pint-pandas
 pint_pandas.PintType.ureg = ureg
+pint.set_application_registry(ureg)
 
 
 def load_pint_data(path: Path, is_numpy = False, **kwargs) -> pd.DataFrame:

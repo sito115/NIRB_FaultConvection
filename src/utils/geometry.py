@@ -2,7 +2,7 @@ import numpy as np
 import pyvista as pv
 from typing import Tuple, List
 import vtk
-from scr.comsol_module.comsol_classes import COMSOL_VTU
+from src.comsol_module.src.comsol_module import COMSOL_VTU
 
 def create_control_mesh(bounds: pv.BoundsTuple,
                         spacing: Tuple[int | float, int | float, int | float]) -> pv.ImageData:

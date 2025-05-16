@@ -3,10 +3,11 @@ from sklearn.metrics import mean_squared_error
 from matplotlib import pyplot as plt
 from pathlib import Path
 import pint
-from scr.comsol_module.entropy import calculate_S_therm
+from src.comsol_module.src.comsol_module import calculate_S_therm
 import pyvista as pv
 from typing import Tuple
 import logging
+import pandas as pd
 
 def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     """Compute the Mean Squared Error (MSE) between predictions and targets.
@@ -83,7 +84,21 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
                                          lambda_therm : pint.Quantity,
                                          t0: pint.Quantity,
                                          delta_T: pint.Quantity,
-                                         ureg : pint.UnitRegistry) -> Tuple[pint.Quantity]:    
+                                         ureg : pint.UnitRegistry) -> Tuple[pint.Quantity]:  
+    """_summary_
+
+    Args:
+        ref_mesh (pv.DataSet): _description_
+        data (np.ndarray): must match n_points of ref_mesh
+        lambda_therm (pint.Quantity): _description_
+        t0 (pint.Quantity): _description_
+        delta_T (pint.Quantity): _description_
+        ureg (pint.UnitRegistry): _description_
+
+    Returns:
+        Tuple[pint.Quantity]: (s0_total [W/(K * m^3)], entropy_number [-])
+
+    """      
     ref_mesh.point_data["temp_field"] = data
     cell_mesh = ref_mesh.point_data_to_cell_data()
     temp_grad = cell_mesh.compute_derivative("temp_field").cell_data["gradient"] * ureg.kelvin / ureg.meter
@@ -128,3 +143,13 @@ def format_comsol_unit(unit : str) -> str:
         str: formatted unit
     """    
     return "[" + unit.replace("**", "^") + "]"
+
+
+def check_range_is_valid(allowed_range: pd.DataFrame, user_range: pd.DataFrame):
+    for col in user_range.columns:
+        min2 = float(allowed_range[col].min())
+        max2 = float(allowed_range[col].max())
+        min1 = float(user_range[col].min())
+        max1 = float(user_range[col].max())
+        
+        assert min2 <= min1 <= max1 <= max2, f"Column {col} has out-of-bound values: {min1}, {max1} not in [{min2}, {max2}]"

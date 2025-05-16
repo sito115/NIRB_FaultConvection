@@ -1,6 +1,7 @@
 import lightning as L
 from pathlib import Path
 from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.callbacks import EarlyStopping
 import optuna
 from torch import nn
 from torchinfo import summary
@@ -41,25 +42,18 @@ def objective(trial: optuna.Trial) -> float:
 
 
     assert ROOT.exists(), f"Not found: {ROOT}"
-    
-    ### PS01
-    basis_func_path = ROOT  / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-    train_snapshots_path = ROOT / "TrainingMapped"  / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "TestMapped" / "Test_temperatures.npy"
+    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
+    basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
+    train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
+    test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-    
-    # # ### PS03
-    # control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
-    # basis_func_path = ROOT / "TrainingMapped"      / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-    # train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
-    # test_snapshots_path = ROOT / "TestMapped"      / control_mesh_suffix / "Exports" / "Test_temperatures.npy"
-    # train_param_path = ROOT / "training_samples.csv"
-    # test_param_path = ROOT / "test_samples.csv"
+
     
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(train_snapshots_path)
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
+    training_parameters     = training_parameters[:len(training_snapshots), :]
     test_snapshots          = np.load(test_snapshots_path)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
@@ -86,35 +80,43 @@ def objective(trial: optuna.Trial) -> float:
     n_inputs = training_parameters.shape[1]
     n_outputs = basis_functions.shape[0]
     
-    
+
+
     model = NirbModule(n_inputs, 
                        [hidden1] + hidden_layers_betw + [hidden6],
                        n_outputs,
                        activation=activation_fn,
                        learning_rate=lr)
 
-    val_ind = np.arange(15)
-    model.val_snaps_scaled = data_module.test_snaps_scaled[val_ind]
+    val_ind = np.arange(20)
+    model.val_snaps_scaled = data_module.test_snaps_scaled
     model.basis_functions = basis_functions
-     
+    
+    check_val_every_n_steps = 100  
     optuna_pruning = OptunaPruning(
         trial, 
-        check_val_every_n_epoch = check_val_every_n_epoch,
-        monitor="Q2_val",        # or "val_loss"
+        check_val_every_n_steps = check_val_every_n_steps,
+        monitor="train_loss",        # or "val_loss"
         mode="min",                  # we're minimizing loss
         )
+    
+    
+    pruning = EarlyStopping("Q2_val",
+                            mode = "min",
+                            patience=200,
+                            )
     
     r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
                                       data_module.training_snaps_scaled,
                                       data_module.basis_func_mtrx)
 
 
-    trainer = L.Trainer(max_epochs=N_EPOCHS,
+    trainer = L.Trainer(max_steps=N_STEPS,
                         # logger=False,
                         enable_checkpointing=False,
-                        callbacks=[optuna_pruning, r2_callback],
+                        callbacks=[pruning, r2_callback, optuna_pruning],
                         enable_progress_bar=False,
-                        check_val_every_n_epoch=check_val_every_n_epoch
+                        check_val_every_n_epoch=25,
                         # max_time={"minutes": 120},
                         )
 
@@ -124,31 +126,31 @@ def objective(trial: optuna.Trial) -> float:
     
     # results = trainer.test(model, dataloaders=data_module.train_dataloader())
     # test_loss = results[0]['test_loss']
-    train_loss = trainer.callback_metrics["Q2_val"].item()
-    # train_loss = model.train_loss
+    validation = trainer.callback_metrics["Q2_val"].item()
+    trial.set_user_attr("Q2", validation)
+    train_loss = model.train_loss
     return train_loss
 
 if __name__ == "__main__":
-    N_EPOCHS = 15_000 #20_000
+    N_STEPS = 30_000 #20_000
     ACCURACY = 1e-5
     ROOT = Path(__file__).parents[1] / "data" / "01"
-    SUFFIX = "mean"
-    check_val_every_n_epoch = 100  
+    SUFFIX = "min_max"
     assert ROOT.exists(), f"Not found: {ROOT}"
     db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
-        "study_name": "sweep_Q2",
+        "study_name": "sweep_Q2_val_pruning",
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize",
                                 pruner=optuna.pruners.MedianPruner(
                                     n_startup_trials=6,
-                                    n_warmup_steps=int(N_EPOCHS*0.33),
+                                    n_warmup_steps=int(N_STEPS*0.33),
                                     n_min_trials=20
                                 ),
                                 **storage_param)
-    study.optimize(objective, n_trials=100, n_jobs=3)
+    study.optimize(objective, n_trials=100, n_jobs=2)
 
     print("Best hyperparameters:")
     print(study.best_params)

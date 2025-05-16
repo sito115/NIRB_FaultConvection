@@ -1,5 +1,5 @@
 import numpy as np
-from scr.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
+from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
 from typing import List
 from torch.utils.data import TensorDataset, DataLoader, Subset
 import torch

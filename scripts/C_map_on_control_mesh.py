@@ -12,7 +12,7 @@ from src.utils import (create_control_mesh,
                        delete_comsol_fields,
                        inverse_distance_weighting,
                        setup_logger)
-from src.comsol_module.comsol_classes import COMSOL_VTU
+from comsol_module import COMSOL_VTU
 
 
 def handle_invalid_point_mask(target_point: np.ndarray,
@@ -34,14 +34,14 @@ def handle_invalid_point_mask(target_point: np.ndarray,
 
 def main():   
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "03"
-    DATA_TYPE = "Training"
+    PARAMETER_SPACE = "01"
+    DATA_TYPE = "Test"
     FIELD_TO_EXPORT : str = "Temperature"
     SPACING = (100, 100, 100) # dx, dy, dz
-    DECIMAL_TOLERANCE = 1
+    DECIMAL_TOLERANCE =  1 # for assertation of min max values afterwards
     
 
-    data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "Training_Original") # data_type) #"Truncated") # data_type)    
+    data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original") # data_type) #"Truncated") # data_type)    
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
     assert DATA_TYPE.lower() in data_folder.name.lower()
     export_folder =  data_folder.parent / (DATA_TYPE + "Mapped")
@@ -53,22 +53,22 @@ def main():
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
     
     # FOR PS 01
-    # original_mesh_path = Path("/Users/thomassimader/Documents/NIRB/data/01/Training/Training_000.vtu")
-    # original_comsol_bounds = COMSOL_VTU(original_mesh_path).mesh.bounds
-    # control_mesh = COMSOL_VTU(original_mesh_path).mesh
-    # control_mesh.clear_data()
+    original_mesh_path = Path("/Users/thomassimader/Documents/NIRB/data/01/TrainingOriginal/Training_100.vtu")
+    original_comsol_bounds = COMSOL_VTU(original_mesh_path).mesh.bounds
+    control_mesh = COMSOL_VTU(original_mesh_path).mesh
+    control_mesh.clear_data()
     
-    original_comsol_bounds = COMSOL_VTU(vtu_files[0]).mesh.bounds
-    logging.debug(f"{original_comsol_bounds=}")
-    control_mesh = create_control_mesh(original_comsol_bounds,
-                                       SPACING)
+    # original_comsol_bounds = COMSOL_VTU(vtu_files[0]).mesh.bounds
+    # logging.debug(f"{original_comsol_bounds=}")
+    # control_mesh = create_control_mesh(original_comsol_bounds,
+    #                                    SPACING)
 
-    
+    setup_logger(is_console=True)
     # Clip bounds of control mesh to avoid interpolation errors
     logging.debug(f"Old bounds of control mesh: {control_mesh.bounds}")
     logging.debug(f"Old n_points of control mesh: {control_mesh.n_points}")
-    bbox = pv.Box(np.trunc(original_comsol_bounds)) # converts image data to unstructered grid
-    control_mesh = control_mesh.clip_box(bbox, invert=False)
+    # bbox = pv.Box(np.trunc(original_comsol_bounds)) # converts image data to unstructered grid
+    # control_mesh = control_mesh.clip_box(bbox, invert=False)
     logging.debug(f"New bounds of control mesh after clipping: {control_mesh.bounds}")
     logging.debug(f"New n_points of control mesh after clipping: {control_mesh.n_points}")
     
@@ -77,7 +77,7 @@ def main():
     bounds_str = '_'.join(f"{x:.0f}" for x in (control_mesh.bounds))
     export_folder = export_folder / f"s{spacing_str}_b{bounds_str}"
     export_folder.mkdir(exist_ok=True)
-    setup_logger(is_console=True, log_file = export_folder / "mapping.log")
+    setup_logger(is_console=False, log_file = export_folder / "mapping.log")
 
     for vtu_path in vtu_files:
         logging.debug(f"Mapping {vtu_path.name}")

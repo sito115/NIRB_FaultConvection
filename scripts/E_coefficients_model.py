@@ -22,35 +22,25 @@ from src.utils import load_pint_data, plot_data
 def main():
     seed_everything(42) 
     ACCURACY = 1e-5
-    BATCH_SIZE = 40
-    LR = 1e-4
-    N_EPOCHS = 150_000 
+    BATCH_SIZE = 30
+    LR = 0.0007423817426086158
+    N_STEPS = 60_000 
     ROOT = Path(__file__).parent.parent / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
-    
     SUFFIX = "mean"
     
-    # PS01
-    basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-    # train_snapshots_path = ROOT / "TrainingMapped" / "Training_temperatures_minus_tgrad.npy"
-    # test_snapshots_path = ROOT / "TestMapped" / "Test_temperatures_minus_tgrad.npy"
-    train_snapshots_path = ROOT / "TrainingMapped" / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "TestMapped" / "Test_temperatures.npy"
+    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
+    basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
+    train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
+    test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-    
-    # control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
-    # # PS03
-    # basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-    # train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
-    # test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy"
-    # train_param_path = ROOT / "training_samples.csv"
-    # test_param_path = ROOT / "test_samples.csv"
 
     
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(train_snapshots_path)
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
+    training_parameters     = training_parameters[:len(training_snapshots), :]
     test_snapshots          = np.load(test_snapshots_path)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
@@ -78,26 +68,26 @@ def main():
         normalizer =scaling,
     )
     
-    plot_data(data_module.training_snaps,
-              title = "Training Snapshots - Unscaled",
-              export_path = ROOT / "Training - Unscaled.png")
-    plot_data(data_module.test_snaps,
-              title = "Test Snapshots - Unscaled",
-              export_path = ROOT / "Test - Unscaled.png")
-    plot_data(data_module.training_snaps_scaled,
-              title = "Training Snapshots - Scaled",
-              export_path = ROOT / f"Training - Scaled{SUFFIX}.png")
-    plot_data(data_module.test_snaps_scaled,
-              title = "Test Snapshots - Scaled",
-              export_path = ROOT / f"Test - Scaled{SUFFIX}.png")
+    # plot_data(data_module.training_snaps,
+    #           title = "Training Snapshots - Unscaled",
+    #           export_path = ROOT / "Training - Unscaled.png")
+    # plot_data(data_module.test_snaps,
+    #           title = "Test Snapshots - Unscaled",
+    #           export_path = ROOT / "Test - Unscaled.png")
+    # plot_data(data_module.training_snaps_scaled,
+    #           title = "Training Snapshots - Scaled",
+    #           export_path = ROOT / f"Training - Scaled{SUFFIX}.png")
+    # plot_data(data_module.test_snaps_scaled,
+    #           title = "Test Snapshots - Scaled",
+    #           export_path = ROOT / f"Test - Scaled{SUFFIX}.png")
     
     n_inputs = training_parameters.shape[1]
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                    [42, 217, 109, 189, 99, 89, 92] ,
+                    [84, 194, 244, 34]  ,
                     n_outputs,
-                    activation=nn.Sigmoid(),
+                    activation=nn.Tanh(),
                     learning_rate=LR,
                     batch_size=BATCH_SIZE)
     
@@ -113,32 +103,31 @@ def main():
 
     logger_dir_name = f"nn_logs_{ACCURACY:.1e}{SUFFIX}"
     logger = TensorBoardLogger(ROOT, name=logger_dir_name)
-    trainer = L.Trainer(max_epochs=N_EPOCHS,
+    trainer = L.Trainer(max_steps=N_STEPS,
                         logger=logger,
                         log_every_n_steps=BATCH_SIZE*10,  # Reduce logging frequency
                         callbacks=[r2_callback], #, EarlyStopping("Q2_val", mode="min")],
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=3,
+                        devices=1,
                         accelerator= "cpu", #'mps',
-                        check_val_every_n_epoch = 200
                         )
     
     try:
-        ckpt_folder = ROOT / logger_dir_name / "version_7" / "checkpoints"
+        ckpt_folder = ROOT / logger_dir_name / "version_18" / "checkpoints"
         ckpt_path = [path for path in ckpt_folder.iterdir() if path.suffix == ".ckpt"][0]
         print(ckpt_path)
     except FileNotFoundError:
         pass
     
-    val_ind = np.arange(10)
+    val_ind = np.arange(20)
     model.val_snaps_scaled = data_module.test_snaps_scaled[val_ind]
     model.basis_functions = basis_functions
     trainer.fit(model=model,
                 train_dataloaders=data_module.train_dataloader(shuffle = False),
                 val_dataloaders=data_module.validation_dataloader(val_ind),
-                ckpt_path = ckpt_path) #ckpt_path
+                ckpt_path = None) #ckpt_path
     
     del trainer
     del model

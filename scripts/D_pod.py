@@ -18,14 +18,15 @@ if __name__ == "__main__":
     DATA_TYPE = "Training"
     ACCURACY = 1e-5
     IS_EXPORT = True
-    SUFFIX = "mean_init"
+    SUFFIX = "mean"
     
-    # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0" / "Exports" / f"{DATA_TYPE}_temperatures.npy"
-    import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures_minus_tgrad.npy"
+    import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_0" / "Exports" / f"{DATA_TYPE}_temperatures.npy"
+    # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures_minus_tgrad.npy"
     export_folder = import_path.parent.parent.joinpath("BasisFunctions")
     export_folder.mkdir(exist_ok=True)
     assert import_path.exists()
     assert export_folder.exists()
+    logging.info(f"{export_folder=}")
     # temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
     temperatures = np.load(import_path)
     

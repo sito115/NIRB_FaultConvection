@@ -12,8 +12,8 @@ from tqdm import tqdm
 import sys
 from joblib import dump 
 sys.path.append(str(Path(__file__).parents[1]))
-from src.comsol_module.comsol_classes import COMSOL_VTU
-from src.comsol_module.helper import calculate_normal
+from comsol_module.comsol_classes import COMSOL_VTU
+from comsol_module.helper import calculate_normal
 from src.utils import (load_pint_data,
                        format_quantity,
                        convert_str_to_pint)
@@ -25,22 +25,23 @@ def main():
     """    
     IS_EXPORT_MP4 = False           # Export MP4 movies
     EXPORT_FIELD = "Temperature"   # Which field to save 
-    IS_EXPORT_NPY = False           # export fields as npy, to use when n_points are the SAME for all vtu files
+    IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
     IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
-    IS_EXPORT_DF = True           # export parameters in mesh.field_data as csv
+    IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "03"
-    DATA_TYPE = "Test"
+    PARAMETER_SPACE = "01"
+    DATA_TYPE = "Training"
     # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
-    data_folder = ROOT / "data" / PARAMETER_SPACE /  "Test_Original"
+    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
+    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped"
     
     assert DATA_TYPE.lower() in str(data_folder).lower()
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    # export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
-    # export_folder.mkdir(exist_ok=True)
+    export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
+    export_folder.mkdir(exist_ok=True)
     # export_folder = data_folder
-    export_folder = Path("/Users/thomassimader/Documents/NIRB/data/03/Exports")
+    # export_folder = Path("/Users/thomassimader/Documents/NIRB/data/01/Exports")
     # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])

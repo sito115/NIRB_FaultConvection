@@ -22,3 +22,6 @@ from .geometry import(
     delete_comsol_fields,
     inverse_distance_weighting,
 )
+
+from .config import (CONFIG_PATH,
+                     read_config)

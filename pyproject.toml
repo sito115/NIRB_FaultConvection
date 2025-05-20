@@ -31,19 +31,17 @@ plotting = [
     "kaleido; sys_platform != 'darwin'",
 ]
 jupyter = [
-    "jupyterlab>=4.4.0",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",
-    "nbformat>=5.10.4",
     "trame-jupyter-extension>=2.1.4",
+    "nbformat>=5.10.4",
 ]
 
 [dependency-groups]
 dev = [
     "autopep8>=2.3.2",
-    "torchinfo>=1.8.0",
     "optuna-dashboard>=0.18.0",
-    "optuna-fast-fanova>=0.0.4",
+    # "optuna-fast-fanova>=0.0.4",
     "gunicorn>=23.0.0",
     "pytest>=8.3.5",
 ]
@@ -51,6 +49,7 @@ offline-stage = [
     "lightning>=2.5.1.post0",
     "optuna>=4.3.0",
     "tensorboard>=2.19.0",
+    "torchinfo>=1.8.0",
 ]
 
 
@@ -63,5 +62,5 @@ log_format = "%(asctime)s %(levelname)s %(message)s"
 log_date_format = "%Y-%m-%d %H:%M:%S"
 
 [tool.uv.sources]
-salib = { path = "./src/SAlib" }
-comsol_module = { path = "./src/comsol_module" }
+salib = { path = "./src/SAlib", editable = true }
+comsol_module = { path = "./src/comsol_module", editable = true }

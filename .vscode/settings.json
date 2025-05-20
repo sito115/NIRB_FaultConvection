@@ -2,8 +2,14 @@
     "python.analysis.autoImportCompletions": true,
     "editor.semanticHighlighting.enabled": true,
     "python.languageServer": "Pylance",
+    "python.testing.pytestEnabled": true,
+    "python.testing.cwd": "${workspaceFolder}/tests",
     "workbench.colorTheme": "Default Dark+",
     "extensions.experimental.affinity": {
         "asvetliakov.vscode-neovim": 1
-    }
+    },
+    "python.analysis.extraPaths": [
+        "src/SALib/src",
+        "src/comsol_module/src"
+    ]
 }

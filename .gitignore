@@ -10,6 +10,7 @@ PythonSkripts/*
 # Snapshots/
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
+*.joblib
 *.mp4
 *.vtu
 *.yaml
@@ -19,8 +20,10 @@ PythonSkripts/*
 *.sqlite3
 *.vti
 *.mph
+*.html
 events.out*
 # Virtual environments
 .venv
 *.lock
 .DS_Store
+*.log

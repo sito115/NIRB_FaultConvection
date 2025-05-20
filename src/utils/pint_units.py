@@ -59,7 +59,7 @@ def format_quantity(q: pint.Quantity) -> str:
     return f"{q.magnitude:.2e} {q.units:~P}"
 
 
-def safe_parse_quantity(s, unit_reg: pint.UnitRegistry = pint.UnitRegistry()):
+def safe_parse_quantity(s):
     """Convert string quantities in Dataframe to pint quantities.
 
     Args:
@@ -70,7 +70,7 @@ def safe_parse_quantity(s, unit_reg: pint.UnitRegistry = pint.UnitRegistry()):
         _type_: pint quantity
     """    
     try:
-        return unit_reg(s)
+        return ureg(s)
     except Exception:
         return np.nan
     

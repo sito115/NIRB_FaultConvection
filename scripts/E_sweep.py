@@ -27,10 +27,10 @@ def objective(trial: optuna.Trial) -> float:
 
     
     # Other hyperparameters
-    lr = trial.suggest_float("lr", 5e-6, 1e-3, log=True)
+    lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
     batch_size = trial.suggest_int("batch_size", 20, 100)
 
-    activation_name = trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
+    activation_name = "sigmoid" #trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -53,10 +53,13 @@ def objective(trial: optuna.Trial) -> float:
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(train_snapshots_path)
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
-    training_parameters     = training_parameters[:len(training_snapshots), :]
     test_snapshots          = np.load(test_snapshots_path)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
+    mask = ~(training_snapshots == 0).all(axis=(1, 2)) # omit indices that are not computed yet
+    training_snapshots      = training_snapshots[mask]
+    training_parameters      = training_parameters[mask, :]
+    assert len(training_parameters) == len(training_parameters)
     # Prepare data
     training_snapshots = training_snapshots[:, -1, :] # last time step
     test_snapshots = test_snapshots[:, -1, :] # last time step
@@ -103,7 +106,7 @@ def objective(trial: optuna.Trial) -> float:
     
     pruning = EarlyStopping("Q2_val",
                             mode = "min",
-                            patience=200,
+                            patience=300,
                             )
     
     r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
@@ -132,25 +135,25 @@ def objective(trial: optuna.Trial) -> float:
     return train_loss
 
 if __name__ == "__main__":
-    N_STEPS = 30_000 #20_000
+    N_STEPS = 120_000 #20_000
     ACCURACY = 1e-5
     ROOT = Path(__file__).parents[1] / "data" / "01"
-    SUFFIX = "min_max"
+    SUFFIX = "mean"
     assert ROOT.exists(), f"Not found: {ROOT}"
     db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
-        "study_name": "sweep_Q2_val_pruning",
+        "study_name": "sweep_Q2_val_pruning_full",
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize",
                                 pruner=optuna.pruners.MedianPruner(
-                                    n_startup_trials=6,
+                                    n_startup_trials=5,
                                     n_warmup_steps=int(N_STEPS*0.33),
                                     n_min_trials=20
                                 ),
                                 **storage_param)
-    study.optimize(objective, n_trials=100, n_jobs=2)
+    study.optimize(objective, n_trials=100, n_jobs=3)
 
     print("Best hyperparameters:")
     print(study.best_params)

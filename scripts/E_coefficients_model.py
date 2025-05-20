@@ -22,9 +22,9 @@ from src.utils import load_pint_data, plot_data
 def main():
     seed_everything(42) 
     ACCURACY = 1e-5
-    BATCH_SIZE = 30
-    LR = 0.0007423817426086158
-    N_STEPS = 60_000 
+    BATCH_SIZE = 50
+    LR = 1e-4
+    N_STEPS = 250_000 
     ROOT = Path(__file__).parent.parent / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
     SUFFIX = "mean"
@@ -40,10 +40,13 @@ def main():
     basis_functions         = np.load(basis_func_path)
     training_snapshots      = np.load(train_snapshots_path)
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
-    training_parameters     = training_parameters[:len(training_snapshots), :]
     test_snapshots          = np.load(test_snapshots_path)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
+    mask = ~(training_snapshots == 0).all(axis=(1, 2)) # omit indices that are not computed yet
+    training_snapshots      = training_snapshots[mask]
+    training_parameters      = training_parameters[mask, :]
+    assert len(training_parameters) == len(training_parameters)
     # Prepare data
     step = 1
     training_snapshots = training_snapshots[::step, -1, :] # last time step
@@ -85,9 +88,9 @@ def main():
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                    [84, 194, 244, 34]  ,
+                    [100, 250, 100]  ,
                     n_outputs,
-                    activation=nn.Tanh(),
+                    activation=nn.Sigmoid(),
                     learning_rate=LR,
                     batch_size=BATCH_SIZE)
     
@@ -125,7 +128,7 @@ def main():
     model.val_snaps_scaled = data_module.test_snaps_scaled[val_ind]
     model.basis_functions = basis_functions
     trainer.fit(model=model,
-                train_dataloaders=data_module.train_dataloader(shuffle = False),
+                train_dataloaders=data_module.train_dataloader(),
                 val_dataloaders=data_module.validation_dataloader(val_ind),
                 ckpt_path = None) #ckpt_path
     

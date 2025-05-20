@@ -16,9 +16,9 @@ if __name__ == "__main__":
     PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
-    ACCURACY = 1e-5
+    ACCURACY = 1e-6
     IS_EXPORT = True
-    SUFFIX = "mean"
+    SUFFIX = "min_max"
     
     import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_0" / "Exports" / f"{DATA_TYPE}_temperatures.npy"
     # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures_minus_tgrad.npy"
@@ -29,12 +29,16 @@ if __name__ == "__main__":
     logging.info(f"{export_folder=}")
     # temperatures = np.load(ROOT / "Snapshots" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_temperatures.npy")
     temperatures = np.load(import_path)
+    mask = ~(temperatures == 0).all(axis=(1, 2)) # omit indices that are not computed yet
+    temperatures = temperatures[mask]
+
     
     if PARAMETER_SPACE == "02":
         for idx in [41, 62, 87]:
             temperatures[idx, -1, :] = temperatures[idx, 10, :]
 
     data_set = temperatures[:, -1, :]
+    logging.info(f"Shape of data set is {data_set.shape}")
     # assert np.all(data_set > 1)
     # data_set = data_set - temperatures[:, 0, :]
     if "mean" in SUFFIX.lower():

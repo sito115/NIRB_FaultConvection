@@ -23,9 +23,9 @@ def main():
     """Extract "EXPORT_FIELD" from  multiple vtu-Files and save it as npy-File.
     Optionally create mp4 movies of simulations. 
     """    
-    IS_EXPORT_MP4 = False           # Export MP4 movies
+    IS_EXPORT_MP4 = True           # Export MP4 movies
     EXPORT_FIELD = "Temperature"   # Which field to save 
-    IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
+    IS_EXPORT_NPY = False           # export fields as npy, to use when n_points are the SAME for all vtu files
     IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
@@ -33,31 +33,33 @@ def main():
     PARAMETER_SPACE = "01"
     DATA_TYPE = "Training"
     # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
-    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
-    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped"
+    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
+    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
     
     assert DATA_TYPE.lower() in str(data_folder).lower()
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
-    export_folder.mkdir(exist_ok=True)
+    # export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
+    # export_folder.mkdir(exist_ok=True)
     # export_folder = data_folder
-    # export_folder = Path("/Users/thomassimader/Documents/NIRB/data/01/Exports")
+    export_folder = Path("/Users/thomassimader/Documents/NIRB/data/01/Exports/Movies")
     # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])
     assert len(vtu_files) > 0
+    # N_SNAPS = len(vtu_files)
+    N_SNAPS = 300
     
     # extract time steps and points from first simulation
-    sim_times = np.zeros((len(vtu_files), ))
+    sim_times = np.zeros((N_SNAPS, ))
     N_POINTS          = COMSOL_VTU(vtu_files[0]).mesh.points.shape[0]
     N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
         
     if IS_EXPORT_NPY:
-        temperatures      = np.zeros((len(vtu_files), N_TIME_STEPS, N_POINTS))
+        temperatures      = np.zeros((N_SNAPS, N_TIME_STEPS, N_POINTS))
         temperatures_diff = np.zeros_like(temperatures)
     if IS_EXPORT_JOBLIB:
-        temperatures = [np.array([]) for _ in range(len(vtu_files))]
-        temperatures_diff =  [np.array([]) for _ in range(len(vtu_files))]
+        temperatures = [np.array([]) for _ in range(N_SNAPS)]
+        temperatures_diff =  [np.array([]) for _ in range(N_SNAPS)]
     
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         idx = int(vtu_file.stem.split("_")[1])
@@ -120,6 +122,8 @@ def main():
     if IS_EXPORT_NPY:
         np.save(export_folder / f"{DATA_TYPE}_temperatures.npy", temperatures)
         np.save(export_folder / f"{DATA_TYPE}_temperatures_minus_tgrad.npy", temperatures_diff )
+        total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".npy")  / (1024 * 1024)
+        print(f"Total size of all mapped .vti files: {total_size} MB")
         
     if IS_EXPORT_JOBLIB:
         dump(temperatures,export_folder / f"{DATA_TYPE}_temperatures.joblib")

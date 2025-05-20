@@ -22,12 +22,12 @@ from src.utils import load_pint_data, plot_data
 def main():
     seed_everything(42) 
     ACCURACY = 1e-5
-    BATCH_SIZE = 50
-    LR = 1e-4
-    N_STEPS = 250_000 
+    BATCH_SIZE = 40
+    LR = 1e-3 
+    N_STEPS = 200_000 
     ROOT = Path(__file__).parent.parent / "data" / "01"
     assert ROOT.exists(), f"Not found: {ROOT}"
-    SUFFIX = "mean"
+    SUFFIX = "min_max"
     
     control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
     basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
@@ -46,6 +46,10 @@ def main():
     mask = ~(training_snapshots == 0).all(axis=(1, 2)) # omit indices that are not computed yet
     training_snapshots      = training_snapshots[mask]
     training_parameters      = training_parameters[mask, :]
+    
+    training_parameters[:, 0] = np.log10(training_parameters[:, 0])
+    test_parameters[:, 0] = np.log10(test_parameters[:, 0])
+    
     assert len(training_parameters) == len(training_parameters)
     # Prepare data
     step = 1
@@ -63,10 +67,12 @@ def main():
     
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
-        training_snaps=training_snapshots,
-        training_param=training_parameters,
+        training_snaps=training_snapshots[:-20, :],
+        training_param=training_parameters[:-20, :],
         test_param=test_parameters,
         test_snaps=test_snapshots,
+        val_param=training_parameters[-20:, :],
+        val_snaps=training_snapshots[-20:, :],
         batch_size=BATCH_SIZE,
         normalizer =scaling,
     )
@@ -88,7 +94,7 @@ def main():
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                    [100, 250, 100]  ,
+                    [2, 201, 245, 68]      ,
                     n_outputs,
                     activation=nn.Sigmoid(),
                     learning_rate=LR,
@@ -113,23 +119,22 @@ def main():
                         strategy='ddp',
                         enable_progress_bar=False,
                         profiler="simple",
-                        devices=1,
+                        devices=3,
                         accelerator= "cpu", #'mps',
                         )
     
     try:
-        ckpt_folder = ROOT / logger_dir_name / "version_18" / "checkpoints"
+        ckpt_folder = ROOT / logger_dir_name / "version_29" / "checkpoints"
         ckpt_path = [path for path in ckpt_folder.iterdir() if path.suffix == ".ckpt"][0]
         print(ckpt_path)
     except FileNotFoundError:
         pass
     
-    val_ind = np.arange(20)
-    model.val_snaps_scaled = data_module.test_snaps_scaled[val_ind]
-    model.basis_functions = basis_functions
+    model.basis_functions = data_module.basis_func_mtrx
+    model.val_snaps_scaled = data_module.val_snaps_scaled
     trainer.fit(model=model,
-                train_dataloaders=data_module.train_dataloader(),
-                val_dataloaders=data_module.validation_dataloader(val_ind),
+                train_dataloaders=data_module.train_dataloader(shuffle = True),
+                val_dataloaders=data_module.validation_dataloader(shuffle = False),
                 ckpt_path = None) #ckpt_path
     
     del trainer
@@ -143,8 +148,8 @@ def main():
     
     model = NirbModule.load_from_checkpoint([path for path in Path(logger.log_dir).rglob("*.ckpt")][0])
     model.eval()
+    model.basis_functions = data_module.basis_func_mtrx
     model.test_snaps_scaled = data_module.test_snaps_scaled
-    model.basis_functions = basis_functions
     results = test_trainer.test(model=model,
                                 dataloaders=data_module.test_dataloader())
     print(results)

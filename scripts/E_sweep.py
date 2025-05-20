@@ -30,7 +30,7 @@ def objective(trial: optuna.Trial) -> float:
     lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
     batch_size = trial.suggest_int("batch_size", 20, 100)
 
-    activation_name = "sigmoid" #trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
+    activation_name = trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -56,6 +56,9 @@ def objective(trial: optuna.Trial) -> float:
     test_snapshots          = np.load(test_snapshots_path)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
+    training_parameters[:, 0] = np.log10(training_parameters[:, 0])
+    test_parameters[:, 0] = np.log10(test_parameters[:, 0])    
+
     mask = ~(training_snapshots == 0).all(axis=(1, 2)) # omit indices that are not computed yet
     training_snapshots      = training_snapshots[mask]
     training_parameters      = training_parameters[mask, :]
@@ -72,12 +75,14 @@ def objective(trial: optuna.Trial) -> float:
 
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
-        training_snaps=training_snapshots,
-        training_param=training_parameters,
-        test_snaps=test_snapshots,
+        training_snaps=training_snapshots[:-20, :],
+        training_param=training_parameters[:-20, :],
         test_param=test_parameters,
+        test_snaps=test_snapshots,
+        val_param=training_parameters[-20:, :],
+        val_snaps=training_snapshots[-20:, :],
         batch_size=batch_size,
-        normalizer=scaling,
+        normalizer =scaling,
     )
     
     n_inputs = training_parameters.shape[1]
@@ -91,22 +96,20 @@ def objective(trial: optuna.Trial) -> float:
                        activation=activation_fn,
                        learning_rate=lr)
 
-    val_ind = np.arange(20)
-    model.val_snaps_scaled = data_module.test_snaps_scaled
-    model.basis_functions = basis_functions
+
+    model.basis_functions = data_module.basis_func_mtrx
+    model.val_snaps_scaled = data_module.val_snaps_scaled
     
-    check_val_every_n_steps = 100  
     optuna_pruning = OptunaPruning(
         trial, 
-        check_val_every_n_steps = check_val_every_n_steps,
         monitor="train_loss",        # or "val_loss"
         mode="min",                  # we're minimizing loss
         )
     
     
-    pruning = EarlyStopping("Q2_val",
+    early_stopping = EarlyStopping("Q2_val",
                             mode = "min",
-                            patience=300,
+                            patience=200,
                             )
     
     r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
@@ -117,7 +120,7 @@ def objective(trial: optuna.Trial) -> float:
     trainer = L.Trainer(max_steps=N_STEPS,
                         # logger=False,
                         enable_checkpointing=False,
-                        callbacks=[pruning, r2_callback, optuna_pruning],
+                        callbacks=[early_stopping, r2_callback, optuna_pruning],
                         enable_progress_bar=False,
                         check_val_every_n_epoch=25,
                         # max_time={"minutes": 120},
@@ -125,7 +128,7 @@ def objective(trial: optuna.Trial) -> float:
 
     trainer.fit(model,
                 train_dataloaders=data_module.train_dataloader(shuffle=True),
-                val_dataloaders=data_module.validation_dataloader(val_ind))
+                val_dataloaders=data_module.validation_dataloader(shuffle=False))
     
     # results = trainer.test(model, dataloaders=data_module.train_dataloader())
     # test_loss = results[0]['test_loss']
@@ -135,7 +138,7 @@ def objective(trial: optuna.Trial) -> float:
     return train_loss
 
 if __name__ == "__main__":
-    N_STEPS = 120_000 #20_000
+    N_STEPS = 100_000 #20_000
     ACCURACY = 1e-5
     ROOT = Path(__file__).parents[1] / "data" / "01"
     SUFFIX = "mean"
@@ -143,7 +146,7 @@ if __name__ == "__main__":
     db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
-        "study_name": "sweep_Q2_val_pruning_full",
+        "study_name": "sweep_Q2_val_pruning_full_new2",
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize",
@@ -153,7 +156,7 @@ if __name__ == "__main__":
                                     n_min_trials=20
                                 ),
                                 **storage_param)
-    study.optimize(objective, n_trials=100, n_jobs=3)
+    study.optimize(objective, n_trials=200, n_jobs=3)
 
     print("Best hyperparameters:")
     print(study.best_params)

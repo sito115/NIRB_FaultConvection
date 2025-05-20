@@ -16,6 +16,8 @@ class NirbDataModule():
                  training_param: np.ndarray,
                  test_snaps: np.ndarray = None,
                  test_param: np.ndarray = None,
+                 val_snaps: np.ndarray = None,
+                 val_param: np.ndarray = None,
                  batch_size: int = 20,
                  normalizer : Normalizations = Normalizations.MinMax):
         """Data Module for NIRB.
@@ -34,6 +36,8 @@ class NirbDataModule():
         self.training_param = training_param 
         self.test_snaps = test_snaps 
         self.test_param = test_param 
+        self.val_snaps = val_snaps
+        self.val_param = val_param
         self.batch_size = batch_size 
 
         # Initialize the corresponding normalizer class based on the enum value
@@ -56,11 +60,15 @@ class NirbDataModule():
         self.training_snaps_scaled = self.normalizer.normalize(self.training_snaps, keep_scaling_params=True)
         self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps_scaled.T).T
         if self.test_param is not None:
-            self.test_param_scaled = self.standardizer.normalize(self.test_param)
+            self.test_param_scaled = self.standardizer.normalize(self.test_param, keep_scaling_params=False)
+        if self.val_param is not None:
+            self.val_param_scaled = self.standardizer.normalize(self.val_param, keep_scaling_params=False)
         if self.test_snaps is not None:
-            self.test_snaps_scaled = self.normalizer.normalize(self.test_snaps)
+            self.test_snaps_scaled = self.normalizer.normalize(self.test_snaps, keep_scaling_params=False)
             self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
-
+        if self.val_snaps is not None:
+            self.val_snaps_scaled = self.normalizer.normalize(self.val_snaps, keep_scaling_params=False)
+            self.val_coeff = np.matmul(self.basis_func_mtrx, self.val_snaps_scaled.T).T
     def setup(self) -> None:
         """Generates TensorDatasets for Training and Test.
         """        
@@ -71,6 +79,10 @@ class NirbDataModule():
             self.dataset_test = TensorDataset(torch.from_numpy(self.test_param_scaled.astype(np.float32)),
                                               torch.from_numpy(self.test_coeff.astype(np.float32)))
             
+        if self.val_snaps is not None:
+            self.dataset_val = TensorDataset(torch.from_numpy(self.val_param_scaled.astype(np.float32)),
+                                             torch.from_numpy(self.val_coeff.astype(np.float32)))
+    
 
     def train_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_train,
@@ -82,16 +94,7 @@ class NirbDataModule():
                           batch_size=len(self.dataset_test),  # All in one batch
                           **kwargs)
         
-    def validation_dataloader(self, test_idx : List[int] = np.arange(10), **kwargs) -> DataLoader:
-        """_summary_
-
-        Args:
-            test_idx (List[int], optional): List of indices of test_snapshots to be validated. Defaults to np.arange(10).
-
-        Returns:
-            DataLoader: 
-        """        
-        subset = Subset(self.dataset_test, test_idx)
-        return DataLoader(subset,
-                          batch_size=len(test_idx), # All in one batch
+    def validation_dataloader(self, **kwargs) -> DataLoader:      
+        return DataLoader(self.dataset_val,
+                          batch_size=len(self.dataset_val), # All in one batch
                           **kwargs)

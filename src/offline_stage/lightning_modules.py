@@ -18,38 +18,31 @@ class NirbModule(L.LightningModule):
                  learning_rate : float = 1e-3,
                  batch_size : int = 20):
         super().__init__()
-    
+        self.save_hyperparameters(ignore=['activation'])
         self.learning_rate = learning_rate
         self.loss = nn.MSELoss()
         self.activation = activation
         self.model = NIRB_NN(n_inputs, hidden_units, n_outputs, self.activation)
         self.batch_size = batch_size
         self.msa_metric = MeanAbsoluteError()
-        self.save_hyperparameters(ignore=['activation'])
         self.test_snaps_scaled : np.ndarray = None
         self.val_snaps_scaled : np.ndarray = None
         self.basis_functions : np.ndarray = None
         self.train_loss : float = None
-        
+        self.log_kwargs = {}
         
     def forward(self, x):
         return self.model(x)
         
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-    
+        
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self.forward(x)
-        loss = self.loss(y_hat, y)  # loss(input, target)
-        metrics = {"train_loss": loss,
-                #    "train_msa" : self.msa_metric(y_hat, y),
-                   }
-        self.log_dict(metrics, 
-                      prog_bar=True,
-                      on_epoch=True,
-                      logger=True,
-                      sync_dist=True)
+        loss = self.loss(y_hat, y)
+        metrics = {"train_loss": loss}
+        self.log_dict(metrics, **self.log_kwargs)
         self.train_loss = loss
         return loss
     
@@ -72,7 +65,7 @@ class NirbModule(L.LightningModule):
             except Exception:
                 metrics["Q2"] = -1
         
-        self.log_dict(metrics)
+        self.log_dict(metrics, **self.log_kwargs)
 
 
     def validation_step(self, batch, batch_idx):
@@ -91,7 +84,7 @@ class NirbModule(L.LightningModule):
                 validation_snaps_truncated = np.matmul(y.detach().cpu().numpy(), self.basis_functions)
                 q2_metric = Q2_metric(validation_snaps_truncated, full_solution_test)
                 metrics["Q2_val_trunc"] = q2_metric
-        self.log_dict(metrics)
+        self.log_dict(metrics, **self.log_kwargs)
     
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         return self(batch)

@@ -45,7 +45,7 @@ def convert_to_preferred_unit(q: pint.Quantity) -> pint.Quantity:
     return q
 
 
-def format_quantity(q: pint.Quantity) -> str:
+def format_quantity(q: pint.Quantity, number_format: str = '.2e') -> str:
     """Display a pint.Quanitity as string in "value unit" format.
     Additionally, preferred units are inserted for temperature, angles.
 
@@ -56,8 +56,7 @@ def format_quantity(q: pint.Quantity) -> str:
         str: e.g. "2.02e01 K"
     """    
     q = convert_to_preferred_unit(q)
-    return f"{q.magnitude:.2e} {q.units:~P}"
-
+    return f"{format(q.magnitude, number_format)} {q.units:~P}"
 
 def safe_parse_quantity(s):
     """Convert string quantities in Dataframe to pint quantities.

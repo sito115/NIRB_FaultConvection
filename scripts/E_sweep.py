@@ -15,10 +15,10 @@ from src.utils import load_pint_data
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
-    hidden1 = trial.suggest_int("hiden1", low = 2, high = 100)
-    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 6)
+    hidden1 = trial.suggest_int("hiden1", low = 2, high = 200)
+    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 4)
     hidden_layers_betw = [
-        trial.suggest_int(f"hidden_layers_betw{i}", 50, 300, step=2)
+        trial.suggest_int(f"hidden_layers_betw{i}", 50, 400, step=2)
         for i in range(num_inbetw_layers)
     ]
     
@@ -28,9 +28,9 @@ def objective(trial: optuna.Trial) -> float:
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 20, 100)
+    batch_size = trial.suggest_int("batch_size", 20, 300)
 
-    activation_name = trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
+    activation_name = "sigmoid" #trial.suggest_categorical("activation", ["relu", "leaky_relu", "sigmoid", "tanh"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -44,8 +44,8 @@ def objective(trial: optuna.Trial) -> float:
     assert ROOT.exists(), f"Not found: {ROOT}"
     control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
     basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-    train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
-    test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy"
+    train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures_minus_tgrad.npy"
+    test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures_minus_tgrad.npy"
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
 
@@ -75,8 +75,8 @@ def objective(trial: optuna.Trial) -> float:
 
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
-        training_snaps=training_snapshots[:-20, :],
-        training_param=training_parameters[:-20, :],
+        training_snaps=training_snapshots,
+        training_param=training_parameters,
         test_param=test_parameters,
         test_snaps=test_snapshots,
         val_param=training_parameters[-20:, :],
@@ -88,13 +88,12 @@ def objective(trial: optuna.Trial) -> float:
     n_inputs = training_parameters.shape[1]
     n_outputs = basis_functions.shape[0]
     
-
-
     model = NirbModule(n_inputs, 
                        [hidden1] + hidden_layers_betw + [hidden6],
                        n_outputs,
                        activation=activation_fn,
-                       learning_rate=lr)
+                       learning_rate=lr,
+                       batch_size=batch_size)
 
 
     model.basis_functions = data_module.basis_func_mtrx
@@ -103,14 +102,15 @@ def objective(trial: optuna.Trial) -> float:
     optuna_pruning = OptunaPruning(
         trial, 
         monitor="train_loss",        # or "val_loss"
+        check_val_every_n_steps=20,
         mode="min",                  # we're minimizing loss
         )
     
     
-    early_stopping = EarlyStopping("Q2_val",
-                            mode = "min",
-                            patience=200,
-                            )
+    # early_stopping = EarlyStopping("Q2_val",
+    #                         mode = "min",
+    #                         patience=200,
+    #                         )
     
     r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
                                       data_module.training_snaps_scaled,
@@ -118,22 +118,23 @@ def objective(trial: optuna.Trial) -> float:
 
 
     trainer = L.Trainer(max_steps=N_STEPS,
-                        # logger=False,
                         enable_checkpointing=False,
-                        callbacks=[early_stopping, r2_callback, optuna_pruning],
+                        callbacks=[r2_callback, optuna_pruning],
                         enable_progress_bar=False,
                         check_val_every_n_epoch=25,
-                        # max_time={"minutes": 120},
+                        max_time={"minutes": 60},
                         )
 
     trainer.fit(model,
-                train_dataloaders=data_module.train_dataloader(shuffle=True),
-                val_dataloaders=data_module.validation_dataloader(shuffle=False))
+                train_dataloaders=data_module.train_dataloader(shuffle=True,
+                                                               num_workers = N_JOBS,
+                                                               persistent_workers=True)
+                
+                )
     
-    # results = trainer.test(model, dataloaders=data_module.train_dataloader())
-    # test_loss = results[0]['test_loss']
-    validation = trainer.callback_metrics["Q2_val"].item()
-    trial.set_user_attr("Q2", validation)
+    results = trainer.test(model, dataloaders=data_module.train_dataloader())
+    test_loss = results[0]['test_loss']
+    trial.set_user_attr("test_loss", test_loss)
     train_loss = model.train_loss
     return train_loss
 
@@ -141,7 +142,9 @@ if __name__ == "__main__":
     N_STEPS = 100_000 #20_000
     ACCURACY = 1e-5
     ROOT = Path(__file__).parents[1] / "data" / "01"
-    SUFFIX = "mean"
+    SUFFIX = "min_max_init_grad"
+    N_JOBS = 2
+    N_TRIALS = 100
     assert ROOT.exists(), f"Not found: {ROOT}"
     db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
@@ -156,7 +159,11 @@ if __name__ == "__main__":
                                     n_min_trials=20
                                 ),
                                 **storage_param)
-    study.optimize(objective, n_trials=200, n_jobs=3)
+    study.optimize(objective, n_trials=N_TRIALS, n_jobs=N_JOBS)
+
+
+
+    ### Print results
 
     print("Best hyperparameters:")
     print(study.best_params)

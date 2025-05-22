@@ -64,10 +64,13 @@ class NirbModule(L.LightningModule):
                     }
         
         if self.test_snaps_scaled is not None and self.basis_functions is not None:
-            full_solution_test = np.matmul(y_hat.detach().numpy(), self.basis_functions)
-            q2_metric = Q2_metric(self.test_snaps_scaled, full_solution_test)
-            metrics["Q2"] = q2_metric
-            metrics["hp_metric"] = q2_metric
+            try:
+                full_solution_test = np.matmul(y_hat.detach().numpy(), self.basis_functions)
+                q2_metric = Q2_metric(self.test_snaps_scaled, full_solution_test)
+                metrics["Q2"] = q2_metric
+                metrics["hp_metric"] = q2_metric
+            except Exception:
+                metrics["Q2"] = -1
         
         self.log_dict(metrics)
 

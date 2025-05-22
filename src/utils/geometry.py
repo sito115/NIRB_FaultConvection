@@ -4,7 +4,7 @@ from typing import Tuple, List
 import vtk
 from src.comsol_module.src.comsol_module import COMSOL_VTU
 
-def create_control_mesh(bounds: pv.BoundsTuple,
+def create_control_mesh(bounds,
                         spacing: Tuple[int | float, int | float, int | float]) -> pv.ImageData:
     """Generates a structured grid withtin "bounds" and spacing in x, y, z directions specified in "spacing".
 

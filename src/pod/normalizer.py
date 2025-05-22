@@ -2,8 +2,12 @@ import numpy as np
 from typing import Protocol
 
 class Normalizer(Protocol):
-    def normalize(self, data : np.ndarray, keep_scaling_params: bool) -> np.ndarray:
+    def normalize(self, data : np.ndarray) -> np.ndarray:
         """Normalize the input data."""
+        ...
+    
+    def normalize_reuse_param(self, data: np.ndarray) -> np.ndarray:
+        """Normalize the input data reusing scaling parameters from data in normalize(). Sensitive to chronological order!"""
         ...
     
     def inverse_normalize(self, data: np.ndarray) -> np.ndarray:
@@ -18,17 +22,16 @@ class MinMaxNormalizer:
     def __init__(self):
         self.scaling_params = {}
         
-    def normalize(self, data: np.ndarray, keep_scaling_params: bool = True) -> np.ndarray:
-        if keep_scaling_params:
-            min_val = np.min(data)
-            max_val = np.max(data)
-            scaled_data = min_max_scaler(data, min_val=min_val, max_val=max_val)
-            self.scaling_params = {"min_val" : min_val, "max_val" : max_val}
-        else:
-            scaled_data = min_max_scaler(data, **self.scaling_params)
-            
+    def normalize(self, data: np.ndarray) -> np.ndarray:
+        min_val = np.min(data)
+        max_val = np.max(data)
+        scaled_data = min_max_scaler(data, min_val=min_val, max_val=max_val)
+        self.scaling_params = {"min_val" : min_val, "max_val" : max_val}
         return scaled_data
-        
+    
+    def normalize_reuse_param(self, data: np.ndarray):
+        return min_max_scaler(data, **self.scaling_params)
+    
     def inverse_normalize(self, data) -> np.ndarray:
         if self.scaling_params is None:
             raise ValueError("No scaling paramters kept. Consider the flag 'keep_scaling_params'.")
@@ -42,16 +45,16 @@ class MeanNormalizer:
     def __init__(self):
         self.scaling_params = {}
 
-    def normalize(self, data: np.ndarray, keep_scaling_params: bool = True) -> np.ndarray:
-        if keep_scaling_params:
-            min_val = np.min(data)
-            max_val = np.max(data)
-            mean_val = np.mean(data)
-            scaled_data = mean_normalization(data, min_val=min_val, max_val=max_val, mean_val=mean_val)
-            self.scaling_params = {"min_val" : min_val, "max_val" : max_val, "mean_val": mean_val}
-        else:
-            scaled_data = mean_normalization(data, **self.scaling_params)
+    def normalize(self, data: np.ndarray) -> np.ndarray:
+        min_val = np.min(data)
+        max_val = np.max(data)
+        mean_val = np.mean(data)
+        scaled_data = mean_normalization(data, min_val=min_val, max_val=max_val, mean_val=mean_val)
+        self.scaling_params = {"min_val" : min_val, "max_val" : max_val, "mean_val": mean_val}
         return scaled_data
+    
+    def normalize_reuse_param(self, data: np.ndarray):
+        return mean_normalization(data, **self.scaling_params)
     
     def inverse_normalize(self, data) -> np.ndarray:
         if self.scaling_params is None:
@@ -65,16 +68,15 @@ class Standardizer:
     def __init__(self):
         self.scaling_params = {}
         
-    def normalize(self, data: np.ndarray, keep_scaling_params: bool = True) -> np.ndarray:
-        if keep_scaling_params:
-            mean = np.mean(data, axis=0)
-            var = np.var(data, axis=0)
-            self.scaling_params = {"mean": mean, "var": var}
-            scaled_data = standardize(data, mean, var)
-        else:
-            scaled_data = standardize(data, **self.scaling_params)
-            
+    def normalize(self, data: np.ndarray) -> np.ndarray:
+        mean = np.mean(data, axis=0)
+        var = np.var(data, axis=0)
+        self.scaling_params = {"mean": mean, "var": var}
+        scaled_data = standardize(data, mean, var)
         return scaled_data
+    
+    def normalize_reuse_param(self, data: np.ndarray):
+        return standardize(data, **self.scaling_params)
     
     def inverse_normalize(self, data):
         raise NotImplementedError("Not implemented yet")

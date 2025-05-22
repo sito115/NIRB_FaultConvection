@@ -55,18 +55,18 @@ class NirbDataModule():
     def compute_coefficients(self) -> None:
         """Calculcates the coefficients (output of NN) for training and test.
         """        
-        self.training_param_scaled = self.standardizer.normalize(self.training_param, keep_scaling_params=True)
-        self.training_snaps_scaled = self.normalizer.normalize(self.training_snaps, keep_scaling_params=True)
+        self.training_param_scaled = self.standardizer.normalize(self.training_param)
+        self.training_snaps_scaled = self.normalizer.normalize(self.training_snaps)
         self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps_scaled.T).T
         if self.test_param is not None:
-            self.test_param_scaled = self.standardizer.normalize(self.test_param, keep_scaling_params=False)
+            self.test_param_scaled = self.standardizer.normalize_reuse_param(self.test_param)
         if self.val_param is not None:
-            self.val_param_scaled = self.standardizer.normalize(self.val_param, keep_scaling_params=False)
+            self.val_param_scaled = self.standardizer.normalize_reuse_param(self.val_param)
         if self.test_snaps is not None:
-            self.test_snaps_scaled = self.normalizer.normalize(self.test_snaps, keep_scaling_params=False)
+            self.test_snaps_scaled = self.normalizer.normalize_reuse_param(self.test_snaps)
             self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
         if self.val_snaps is not None:
-            self.val_snaps_scaled = self.normalizer.normalize(self.val_snaps, keep_scaling_params=False)
+            self.val_snaps_scaled = self.normalizer.normalize_reuse_param(self.val_snaps)
             self.val_coeff = np.matmul(self.basis_func_mtrx, self.val_snaps_scaled.T).T
     def setup(self) -> None:
         """Generates TensorDatasets for Training and Test.

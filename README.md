@@ -15,28 +15,36 @@ Each script/notebook contains an alphabetical prefix that denotes its chronologi
 ├── data
 │   ├── 01 # Parameter Space 01 
 │   ├── 02 # Parameter Space 02 
+│   ├── 03 # Parameter Space 03 
 │   └── ..
 ├── docs
 ├── notebooks
 │   ├── A_plot_samples.ipynb
 │   ├── C_entropy_vs_n_cells.ipynb
+│   ├── C_plot_scaled_vs_unscaled_data.ipynb
 │   ├── C_quality_check_plots.ipynb
 │   ├── D_quality_check.ipynb
+│   ├── E_analyse_sweep.ipynb
 │   ├── E_online_stage.ipynb
+│   ├── F_sensitivity_analysis.ipynbb
 ├── scr
-│   ├── MPh
 │   ├── comsol_module
+│   ├── config.ini
+│   ├── MPh
 │   ├── offline_stage
+│   ├── pod
+│   ├── SALib
 │   ├── sampling
 │   └── utils
 ├── scripts
 │   ├── A_sampling.py
 │   ├── B_compute_snapshots.py
 │   ├── C_map_on_control_mesh.py
-│   ├── C_process_map_export.py
+│   ├── C_merge_plot_snapshots.py
 │   ├── D_pod.py
 │   ├── E_coefficients_model.py
 │   ├── E_sweep.py
+│   └── Z_write_config.pyy
 ````
 
 
@@ -53,6 +61,13 @@ This step extracts data from the `.vtu` files and merges it into `.npy` files. A
 
 ### D - POD 
 This step involves applying Proper Orthogonal Decomposition (POD) to the simulation data.
+Suffixes for normalization (mandatory):
+- `min_max` - Min max normalization (with MinMaxScaler)
+- `mean` - Mean normalization (with MeanScaler)
+- ... `init` - First time step is substracted
+- ... `init_grad` - Analytically calculcated temperature gradient is substracted from solution.
+
+For example, the 
 
 ### E - Coefficient Model
 In this step, a machine learning model is created using the `Lightning` library to estimate the coefficients for each basis function.

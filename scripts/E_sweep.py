@@ -16,7 +16,7 @@ from src.utils import load_pint_data, setup_logger
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
     hidden1 = trial.suggest_int("hiden1", low = 2, high = 200)
-    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 4)
+    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 2, 6)
     hidden_layers_betw = [
         trial.suggest_int(f"hidden_layers_betw{i}", 50, 400, step=2)
         for i in range(num_inbetw_layers)
@@ -47,12 +47,9 @@ def objective(trial: optuna.Trial) -> float:
     if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
         train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures_minus_tgrad.npy" 
         test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures_minus_tgrad.npy" 
-        logging.debug("Entered 'init' and condition - Loading with suffix 'minus_tgrad'")
     else:
         train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
         test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy" 
-        logging.debug("Entered else - Loading without suffix 'minus_tgrad'")
-
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
 
@@ -67,10 +64,12 @@ def objective(trial: optuna.Trial) -> float:
     training_snapshots       = training_snapshots[mask]
     training_parameters      = training_parameters[mask, :]
     
-    training_parameters[:, 0] = np.log10(training_parameters[:, 0])
-    test_parameters[:, 0] = np.log10(test_parameters[:, 0])
     
-    assert len(training_parameters) == len(training_parameters)
+    if PARAMETER_SPACE == "01":
+        training_parameters[:, 0] = np.log10(training_parameters[:, 0])
+        test_parameters[:, 0] = np.log10(test_parameters[:, 0])
+    
+    assert len(training_snapshots) == len(training_parameters)
     # Prepare data
 
     if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
@@ -103,8 +102,6 @@ def objective(trial: optuna.Trial) -> float:
         training_param=training_parameters,
         test_param=test_parameters,
         test_snaps=test_snapshots,
-        val_param=training_parameters[-20:, :],
-        val_snaps=training_snapshots[-20:, :],
         batch_size=batch_size,
         normalizer =scaling,
     )
@@ -119,9 +116,6 @@ def objective(trial: optuna.Trial) -> float:
                        learning_rate=lr,
                        batch_size=batch_size)
 
-
-    model.basis_functions = data_module.basis_func_mtrx
-    model.val_snaps_scaled = data_module.val_snaps_scaled
     
     optuna_pruning = OptunaPruning(
         trial, 
@@ -141,7 +135,7 @@ def objective(trial: optuna.Trial) -> float:
                         callbacks=[r2_callback, optuna_pruning],
                         enable_progress_bar=False,
                         check_val_every_n_epoch=25,
-                        max_time={"minutes": 45},
+                        max_time={"minutes": 60},
                         )
 
     trainer.fit(model,
@@ -151,18 +145,19 @@ def objective(trial: optuna.Trial) -> float:
                 
                 )
     
-    results = trainer.test(model, dataloaders=data_module.train_dataloader())
+    results = trainer.test(model, dataloaders=data_module.test_dataloader())
     test_loss = results[0]['test_loss']
     trial.set_user_attr("test_loss", test_loss)
     train_loss = model.train_loss
     return train_loss
 
 if __name__ == "__main__":
-    N_STEPS = 60_000 #20_000
+    N_STEPS = 100_000 #20_000
     ACCURACY = 1e-5
-    ROOT = Path(__file__).parents[1] / "data" / "01"
-    SUFFIX = "min_max_init"
-    N_JOBS = 3
+    PARAMETER_SPACE = "01"
+    ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
+    SUFFIX = "min_max_init_grad"
+    N_JOBS = 2
     N_TRIALS = 100
     setup_logger(is_console=False, log_file = ROOT / "optuna.log")
     optuna.logging.get_logger("optuna").setLevel(logging.INFO)
@@ -171,7 +166,7 @@ if __name__ == "__main__":
     db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
-        "study_name": "sweep2",
+        "study_name": "sweep",
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize",

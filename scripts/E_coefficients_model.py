@@ -14,20 +14,23 @@ from lightning.pytorch import seed_everything
 import numpy as np
 from pathlib import Path
 import sys
+import random
+import logging
 sys.path.append(str(Path(__file__).parents[1]))
 from src.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd, Normalizations
 from src.utils import load_pint_data, plot_data
-import random
+
 
 def main():
     seed_everything(42) 
     ACCURACY = 1e-5
-    BATCH_SIZE = 25
-    LR = 1e-3 
-    N_STEPS = 200_000 
-    ROOT = Path(__file__).parent.parent / "data" / "01"
+    BATCH_SIZE = 100
+    LR = 1e-4 
+    N_STEPS = 250_000 
+    PARAMETER_SPACE = "01"
+    ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
     assert ROOT.exists(), f"Not found: {ROOT}"
-    SUFFIX = "min_max_init_grad"
+    SUFFIX = "min_max_init"
     N_DEVICES = 3
     
     control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
@@ -52,21 +55,26 @@ def main():
     training_snapshots       = training_snapshots[mask]
     training_parameters      = training_parameters[mask, :]
     
-    training_parameters[:, 0] = np.log10(training_parameters[:, 0])
-    test_parameters[:, 0] = np.log10(test_parameters[:, 0])
     
-    assert len(training_parameters) == len(training_parameters)
+    if PARAMETER_SPACE == "01":
+        training_parameters[:, 0] = np.log10(training_parameters[:, 0])
+        test_parameters[:, 0] = np.log10(test_parameters[:, 0])
+    
+    assert len(training_snapshots) == len(training_parameters)
     # Prepare data
 
     if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
         training_snapshots  = training_snapshots[:, -1, :] # last time step
         test_snapshots      = test_snapshots[:, -1, :]
+        logging.debug("Entered 'init' and 'grad' condition")
     elif 'init' in SUFFIX.lower():
         training_snapshots  = training_snapshots[:, -1, :] -  training_snapshots[:, 0, :] 
         test_snapshots      = test_snapshots[:, -1, :] - test_snapshots[:, 0, :]
+        logging.debug("Entered 'init' condition")
     else:
         training_snapshots  = training_snapshots[:, -1, :]
         test_snapshots      = test_snapshots[:, -1, :]
+        logging.debug("Entered else statement condition")
     
 
     if "mean" in SUFFIX.lower():
@@ -78,19 +86,21 @@ def main():
     print(f"Selected {scaling}")
 
     random.seed(12342)
-    n_validation : int = 15
-    val_idx = random.sample(range(len(training_snapshots)), n_validation)  # upper bound is exclusive    
+    n_validation : int = 10
+    # val_idx = random.sample(range(len(test_snapshots)), n_validation)  # upper bound is exclusive    
+    val_idx = np.arange(len(test_snapshots) - n_validation, len(test_snapshots))
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
-        training_snaps=np.delete(training_snapshots, val_idx, axis = 0),
-        training_param=np.delete(training_parameters, val_idx, axis = 0),
-        test_param=test_parameters,
-        test_snaps=test_snapshots,
-        val_param=training_parameters[val_idx, :],
-        val_snaps=training_snapshots[val_idx, :],
+        training_snaps=training_snapshots,
+        training_param=training_parameters,
+        test_param=np.delete(test_parameters, val_idx, axis = 0),
+        test_snaps=np.delete(test_snapshots, val_idx, axis = 0),
+        val_param=test_parameters[val_idx, :],
+        val_snaps=test_snapshots[val_idx, :],
         batch_size=BATCH_SIZE,
         normalizer =scaling,
     )
+    
     
     def plot_scaled_data():
         plot_data(data_module.training_snaps,
@@ -110,7 +120,7 @@ def main():
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                    [26, 300, 300, 100] ,
+                    [50, 100, 100, 100, 100, 100],
                     n_outputs,
                     activation=nn.Sigmoid(),
                     learning_rate=LR,
@@ -124,7 +134,7 @@ def main():
     log_kwargs = {}
     log_kwargs['on_epoch'] = True
     if N_DEVICES > 1:
-        log_kwargs['sync_dist'] = True
+        log_kwargs['sync_dist'] = False
     
     model.log_kwargs = log_kwargs
 
@@ -138,6 +148,7 @@ def main():
                         profiler="simple",
                         devices=N_DEVICES,
                         accelerator= "cpu", #'mps',
+                        log_every_n_steps = 5 * BATCH_SIZE
                         )
     
     try:

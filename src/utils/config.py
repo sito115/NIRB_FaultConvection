@@ -2,7 +2,7 @@ import configparser
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-CONFIG_PATH = Path(__file__).parents[1] / 'config.ini'
+CONFIG_PATH = Path(__file__).parents[2] / 'config.ini'
 
 
 def read_config() -> dict:

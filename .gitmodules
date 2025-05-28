@@ -1,12 +1,12 @@
-[submodule "scr/comsol_module"]
+[submodule "src/comsol_module"]
 	path = src/comsol_module
 	url = http://10.0.1.2:3000/tsimader/comsol_module.git
 	branch = nirb
-[submodule "scr/MPh"]
+[submodule "src/MPh"]
 	path = src/MPh
 	url = http://10.0.1.2:3000/GeomeconMain/MPh.git
 	branch = nirb
-[submodule "scr/SALib"]
+[submodule "src/SALib"]
 	path = src/SALib
-	url = https://github.com/SALib/SALib.git
-	branch = main
+	url = http://10.0.1.2:3000/tsimader/SAlib.git
+	branch = nirb_salib

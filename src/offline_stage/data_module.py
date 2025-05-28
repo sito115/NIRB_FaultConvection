@@ -30,6 +30,11 @@ class NirbDataModule():
             batch_size (int, optional): _description_. Defaults to 20.
             normalizer (Normalizations): Normalizer for Snapshots. Defaults to MinMaxNormalizer():
         """
+        #TODO: Implement assertations
+        assert basis_func_mtrx.shape[1] == training_snaps.shape[1]
+        assert training_snaps.shape[0] == training_param.shape[0]
+        
+        
         self.basis_func_mtrx = basis_func_mtrx 
         self.training_snaps = training_snaps 
         self.training_param = training_param 
@@ -62,23 +67,27 @@ class NirbDataModule():
             self.test_param_scaled = self.standardizer.normalize_reuse_param(self.test_param)
         if self.val_param is not None:
             self.val_param_scaled = self.standardizer.normalize_reuse_param(self.val_param)
+            
+            
         if self.test_snaps is not None:
             self.test_snaps_scaled = self.normalizer.normalize_reuse_param(self.test_snaps)
             self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
         if self.val_snaps is not None:
             self.val_snaps_scaled = self.normalizer.normalize_reuse_param(self.val_snaps)
             self.val_coeff = np.matmul(self.basis_func_mtrx, self.val_snaps_scaled.T).T
+            
+            
     def setup(self) -> None:
         """Generates TensorDatasets for Training and Test.
         """        
         self.dataset_train = TensorDataset(torch.from_numpy(self.training_param_scaled.astype(np.float32)),
                                            torch.from_numpy(self.training_coeff.astype(np.float32)))
             
-        if self.test_snaps is not None:
+        if self.test_snaps is not None and self.test_param is not None:
             self.dataset_test = TensorDataset(torch.from_numpy(self.test_param_scaled.astype(np.float32)),
                                               torch.from_numpy(self.test_coeff.astype(np.float32)))
             
-        if self.val_snaps is not None:
+        if self.val_snaps is not None and self.val_param is not None:
             self.dataset_val = TensorDataset(torch.from_numpy(self.val_param_scaled.astype(np.float32)),
                                              torch.from_numpy(self.val_coeff.astype(np.float32)))
     
@@ -88,10 +97,12 @@ class NirbDataModule():
                           batch_size=self.batch_size,
                           **kwargs)
 
+
     def test_dataloader(self, **kwargs) -> DataLoader:
         return DataLoader(self.dataset_test,
                           batch_size=len(self.dataset_test),  # All in one batch
                           **kwargs)
+        
         
     def validation_dataloader(self, **kwargs) -> DataLoader:      
         return DataLoader(self.dataset_val,

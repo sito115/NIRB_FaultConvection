@@ -11,6 +11,7 @@ class NIRB_NN(nn.Module):
                  n_outputs: int,
                  activation = nn.Sigmoid()):
         super().__init__()
+        assert len(hidden_units) > 0, "hidden_units must contain at least one layer"
         
         all_layers = []
         for hidden_unit in hidden_units:

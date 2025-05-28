@@ -22,16 +22,16 @@ from src.utils import load_pint_data, plot_data
 
 
 def main():
-    seed_everything(42) 
+    # seed_everything(42) 
     ACCURACY = 1e-5
-    BATCH_SIZE = 100
-    LR = 1e-4 
-    N_STEPS = 250_000 
+    BATCH_SIZE = 300
+    LR = 6e-4
+    N_STEPS = 500_000 
     PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
     assert ROOT.exists(), f"Not found: {ROOT}"
-    SUFFIX = "min_max_init"
-    N_DEVICES = 3
+    SUFFIX = "min_max"
+    N_DEVICES = 1
     
     control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
     basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
@@ -59,6 +59,14 @@ def main():
     if PARAMETER_SPACE == "01":
         training_parameters[:, 0] = np.log10(training_parameters[:, 0])
         test_parameters[:, 0] = np.log10(test_parameters[:, 0])
+        # t_thresh = 273.15 + 200
+        # mask_training = training_parameters[:, 1] < t_thresh
+        # training_snapshots = training_snapshots[mask_training]
+        # training_parameters = training_parameters[mask_training, :]
+        # mask_test = test_parameters[:, 1] < t_thresh
+        # test_snapshots = test_snapshots[mask_test]
+        # test_parameters = test_parameters[mask_test, :]
+        
     
     assert len(training_snapshots) == len(training_parameters)
     # Prepare data
@@ -115,12 +123,15 @@ def main():
         plot_data(data_module.test_snaps_scaled,
                 title = "Test Snapshots - Scaled",
                 export_path = ROOT / f"Test - Scaled{SUFFIX}.png")
+    plot_scaled_data()
     
     n_inputs = training_parameters.shape[1]
     n_outputs = basis_functions.shape[0]
     
     model = NirbModule(n_inputs,
-                    [50, 100, 100, 100, 100, 100],
+                    
+[8, 201, 245, 68],
+
                     n_outputs,
                     activation=nn.Sigmoid(),
                     learning_rate=LR,
@@ -145,16 +156,15 @@ def main():
                         callbacks=[r2_callback], #, EarlyStopping("Q2_val", mode="min")],
                         strategy='ddp',
                         enable_progress_bar=False,
-                        profiler="simple",
                         devices=N_DEVICES,
                         accelerator= "cpu", #'mps',
-                        log_every_n_steps = 5 * BATCH_SIZE
+                        log_every_n_steps = BATCH_SIZE
                         )
     
     try:
-        ckpt_folder = ROOT / logger_dir_name / "version_19" / "checkpoints"
+        ckpt_folder = ROOT / logger_dir_name / "version_12" / "checkpoints"
         ckpt_path = [path for path in ckpt_folder.iterdir() if path.suffix == ".ckpt"][0]
-        print(ckpt_path)
+        print(None)
     except FileNotFoundError:
         pass
     

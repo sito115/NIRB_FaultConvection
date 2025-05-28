@@ -15,22 +15,22 @@ from src.utils import load_pint_data, setup_logger
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
-    hidden1 = trial.suggest_int("hiden1", low = 2, high = 200)
-    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 2, 6)
+    hidden1 = trial.suggest_int("hiden1", low = 2, high = 300)
+    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 2, 4)
     hidden_layers_betw = [
         trial.suggest_int(f"hidden_layers_betw{i}", 50, 400, step=2)
         for i in range(num_inbetw_layers)
     ]
     
-    hidden6 = trial.suggest_int("hiden6", low = 10,  high = 100 ,step=2)
+    hidden6 = trial.suggest_int("hiden6", low = 50,  high = 300 ,step=2)
     
 
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 1e-5, 1e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 20, 300)
+    batch_size = trial.suggest_int("batch_size", 50, 500)
 
-    activation_name = trial.suggest_categorical("activation", ["sigmoid", "tanh"])
+    activation_name = trial.suggest_categorical("activation", ["sigmoid"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -152,7 +152,7 @@ def objective(trial: optuna.Trial) -> float:
     return train_loss
 
 if __name__ == "__main__":
-    N_STEPS = 100_000 #20_000
+    N_STEPS = 70_000 #20_000
     ACCURACY = 1e-5
     PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     db_path = ROOT /f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
-        "study_name": "sweep",
+        "study_name": "sweep5",
         "load_if_exists": True
     }
     study = optuna.create_study(direction="minimize",

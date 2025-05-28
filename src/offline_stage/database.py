@@ -1,7 +1,23 @@
 import sqlite3
 
+def create_db(cursor: sqlite3.Cursor):
+    # Create the table with a UNIQUE constraint directly (index will be implicit)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS nirb_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        norm TEXT,
+        Q2_scaled FLOAT,
+        Q2_unscaled FLOAT,
+        R2_scaled FLOAT,
+        R2_unscaled FLOAT,
+        Version TEXT,
+        Entropy_MSE FLOAT,
+        Entropy_R2 FLOAT,
+        Accuracy REAL,
+        UNIQUE(norm, Version, Accuracy)  -- Required for ON CONFLICT
+    )
+    ''')
 
-# Function to insert or update a row
 def upsert_db(cursor: sqlite3.Cursor, norm, q2_scaled, q2_unscaled, r2_scaled, r2_unscaled, version, entropy_mse, entropy_r2, accuracy):
     cursor.execute('''
     INSERT INTO nirb_results (norm, Q2_scaled, Q2_unscaled, R2_scaled, R2_unscaled, Version, Entropy_MSE, Entropy_R2, Accuracy)
@@ -15,27 +31,3 @@ def upsert_db(cursor: sqlite3.Cursor, norm, q2_scaled, q2_unscaled, r2_scaled, r
         Entropy_R2 = excluded.Entropy_R2,
         Accuracy = excluded.Accuracy
     ''', (norm, q2_scaled, q2_unscaled, r2_scaled, r2_unscaled, version, entropy_mse, entropy_r2, accuracy))
-    
-    
-def create_db(cursor: sqlite3.Cursor):
-    # Create the table with needed columns
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS nirb_results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        norm TEXT,
-        Q2_scaled FLOAT,
-        Q2_unscaled FLOAT,
-        R2_scaled FLOAT,
-        R2_unscaled FLOAT,
-        Version TEXT,
-        Entropy_MSE FLOAT,
-        Entropy_R2 FLOAT,
-        Accuracy REAL,
-        UNIQUE(norm, Version, Accuracy)
-    )
-    ''')
-
-    # Create unique index on (norm, Version) to enable UPSERT on these columns
-    cursor.execute('''
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_norm_version ON nirb_results(norm, Version, Accuracy)
-    ''')

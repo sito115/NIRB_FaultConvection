@@ -9,6 +9,8 @@ from typing import Tuple
 import logging
 import pandas as pd
 
+ureg = pint.get_application_registry()
+
 def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
     """Compute the Mean Squared Error (MSE) between predictions and targets.
 
@@ -83,8 +85,7 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
                                          data : np.ndarray,
                                          lambda_therm : pint.Quantity,
                                          t0: pint.Quantity,
-                                         delta_T: pint.Quantity,
-                                         ureg : pint.UnitRegistry) -> Tuple[pint.Quantity]:  
+                                         delta_T: pint.Quantity) -> Tuple[pint.Quantity]:  
     """_summary_
 
     Args:

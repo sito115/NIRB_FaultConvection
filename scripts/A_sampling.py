@@ -22,8 +22,8 @@ from src.sampling import Parameter
 def main():
     ### SETUP
     ROOT = Path(__file__).parent
-    N_TRAINING = 20
-    N_TEST = 0
+    N_TRAINING = 0
+    N_TEST = 20
     pint_pandas.PintType.ureg.formatter.default_format = "#D~"
     random.seed(42)
 
@@ -32,9 +32,9 @@ def main():
     parameters: List[Parameter] = []
     # parameters.append(Parameter("fault_k_trans", [1e-18, 1e-12], unit="m^2", is_log=True))
     # parameters.append(Parameter("fault_k_long", [1e-18,1e-12], unit="m^2", is_log=True))
-    parameters.append(Parameter("host_k", [1e-18, 1e-15],  unit="m^2", is_log=True))
-    parameters.append(Parameter("T_h", [195, 220], unit = "degC", is_log=False))
-    # parameters.append(Parameter("dip", [50, 90], unit = "deg", is_log=False))
+    # parameters.append(Parameter("host_k", [1e-18, 1e-15],  unit="m^2", is_log=True))
+    # parameters.append(Parameter("T_h", [195, 220], unit = "degC", is_log=False))
+    parameters.append(Parameter("dip", [50, 90], unit = "deg", is_log=False))
 
     units_dict = {param.name: f'pint[{param.unit}]' for param in parameters}
     

@@ -86,8 +86,8 @@ class NirbModule(L.LightningModule):
                 metrics["Q2_val_trunc"] = q2_metric
         self.log_dict(metrics, **self.log_kwargs)
     
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        return self(batch)
+    # def predict_step(self, batch, batch_idx, dataloader_idx=0):
+    #     return self(batch)
     
     
 

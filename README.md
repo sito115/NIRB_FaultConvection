@@ -13,9 +13,11 @@ Each script/notebook contains an alphabetical prefix that denotes its chronologi
 
 ````shell
 ├── data
-│   ├── 01 # Parameter Space 01 
-│   ├── 02 # Parameter Space 02 
-│   ├── 03 # Parameter Space 03 
+│   ├── 01 # Parameter Space 01 T_h, host_k
+│   ├── 02 # Parameter Space 02 T_h, host_k, fault_k_trans, fault_k_long
+│   ├── 03 # Parameter Space 03 dip
+│   ├── 04 # Börsing
+│   ├── 05 # PS 01 along fault plane
 │   └── ..
 ├── docs
 ├── notebooks

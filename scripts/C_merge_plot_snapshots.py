@@ -31,23 +31,28 @@ def main():
     
     ROOT = Path(__file__).parents[1]
     PARAMETER_SPACE = "01"
-    DATA_TYPE = "Training"
+    DATA_TYPE = "Test"
     # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
-    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
-    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
+    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
+    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
     
     assert DATA_TYPE.lower() in str(data_folder).lower()
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
     # export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
+    # export_folder = data_folder / "Exports"
     # export_folder.mkdir(exist_ok=True)
-    # export_folder = data_folder
     export_folder = Path("/Users/thomassimader/Documents/NIRB/data/01/Exports/Movies")
-    # export_folder = Path("/Users/thomassimader/Documents/ESIM95_Transfer")
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])
     assert len(vtu_files) > 0
-    # N_SNAPS = len(vtu_files)
-    N_SNAPS = 300
+    N_SNAPS = len(vtu_files)
+    # N_SNAPS = 300
+    
+    parameter_file = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv"
+    assert parameter_file.exists()
+    pint_parameters_df = load_pint_data(parameter_file)
+    assert len(pint_parameters_df) == N_SNAPS 
+    free_parameter_names = pint_parameters_df.columns
     
     # extract time steps and points from first simulation
     sim_times = np.zeros((N_SNAPS, ))
@@ -75,13 +80,19 @@ def main():
         t_c = parameters_pint['T_c'].to('K').magnitude
         t_h = parameters_pint['T_h'].to('K').magnitude
         t_grad = (t_h - t_c) / parameters_pint['H'].to('m').magnitude
-    
+        
+        ### Check that Parameters in field data are equal to parameters stored in data frame
+        for free_parameter in free_parameter_names:
+            field_value = parameters_pint[free_parameter]
+            df_value = pint_parameters_df.loc[idx, free_parameter]
+            assert field_value.units == df_value.units, f"Unit mismatch: {field_value.units} vs {df_value.units}"    
+            assert np.isclose( field_value.magnitude, df_value.magnitude, rtol=1e-10)
+            
         if IS_EXPORT_MP4:
             dip = parameters_pint['dip'].to('degree').magnitude
             strike = parameters_pint['strike'].to('degree').magnitude
-            pint_parameters_df = load_pint_data(ROOT /  "data" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv") # TODO: load each paramter.csv inidivudally
             param_string = "\n".join([
-                            f"{col} = {format_quantity(para)}"
+                            f"{col} = {format_quantity(para, number_format='.4g')}"
                             for col, para in pint_parameters_df.loc[idx].items()
                             ])
             normal = calculate_normal(dip, strike)
@@ -127,7 +138,7 @@ def main():
         
     if IS_EXPORT_JOBLIB:
         dump(temperatures,export_folder / f"{DATA_TYPE}_temperatures.joblib")
-        dump(temperatures_diff, export_folder / f"{DATA_TYPE}_temperatures_diff.joblib")
+        dump(temperatures_diff, export_folder / f"{DATA_TYPE}_temperatures_minus_tgrad.joblib")
         print("Joblib export successfull")
         total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".joblib")  / (1024 * 1024)
         print(f"Total size of all mapped .vti files: {total_size} MB")

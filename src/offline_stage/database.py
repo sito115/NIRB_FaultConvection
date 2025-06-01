@@ -6,14 +6,16 @@ def create_db(cursor: sqlite3.Cursor):
     CREATE TABLE IF NOT EXISTS nirb_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         norm TEXT,
+        Version TEXT,
+        Accuracy REAL,
         Q2_scaled FLOAT,
         Q2_unscaled FLOAT,
         R2_scaled FLOAT,
         R2_unscaled FLOAT,
-        Version TEXT,
-        Entropy_MSE FLOAT,
-        Entropy_R2 FLOAT,
-        Accuracy REAL,
+        Entropy_MSE_test FLOAT,
+        Entropy_R2_test FLOAT,
+        Entropy_MSE_train FLOAT,
+        Entropy_R2_train FLOAT,
         UNIQUE(norm, Version, Accuracy)  -- Required for ON CONFLICT
     )
     ''')

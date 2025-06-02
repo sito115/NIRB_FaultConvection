@@ -3,10 +3,12 @@ from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
 from torch.utils.data import TensorDataset, DataLoader
 import torch
 from enum import Enum
+import logging
 
 class Normalizations(Enum):
     MinMax = "MinMax"
     Mean   = "Mean"
+    Standardizer = "Standardizer" # Z Score
 
 class NirbDataModule():
     def __init__(self,
@@ -18,7 +20,8 @@ class NirbDataModule():
                  val_snaps: np.ndarray = None,
                  val_param: np.ndarray = None,
                  batch_size: int = 20,
-                 normalizer : Normalizations = Normalizations.MinMax):
+                 normalizer : Normalizations = Normalizations.MinMax,
+                 standardizer_features = Normalizations.Standardizer):
         """Data Module for NIRB.
 
         Args:
@@ -30,7 +33,6 @@ class NirbDataModule():
             batch_size (int, optional): _description_. Defaults to 20.
             normalizer (Normalizations): Normalizer for Snapshots. Defaults to MinMaxNormalizer():
         """
-        #TODO: Implement assertations
         assert basis_func_mtrx.shape[1] == training_snaps.shape[1]
         assert training_snaps.shape[0] == training_param.shape[0]
         
@@ -49,35 +51,74 @@ class NirbDataModule():
             self.normalizer = MinMaxNormalizer()
         elif normalizer == Normalizations.Mean:
             self.normalizer = MeanNormalizer()
+        elif normalizer == Normalizations.Standardizer:
+            self.normalizer = Standardizer()
         else:
-            raise ValueError(f"Unknown normalizer type: {normalizer}")
+            self.normalizer = None
+        self.scale_outputs()    
 
-        
-        self.standardizer = Standardizer() # for parameters
+        if standardizer_features == Normalizations.Standardizer:
+            self.standardizer = Standardizer() # for parameters
+        elif standardizer_features == Normalizations.MinMax:
+            self.standardizer = MinMaxNormalizer() # for parameters
+        elif standardizer_features == Normalizations.Mean:
+            self.standardizer = MeanNormalizer() # for parameters
+        else:
+            self.standardizer = None
+            
+        self.scale_features()
         self.compute_coefficients()
-        self.setup()
+        self.setup_tensor_datasets()
 
-    def compute_coefficients(self) -> None:
-        """Calculcates the coefficients (output of NN) for training and test.
-        """        
+    def scale_features(self) -> None:
+        if self.standardizer is None:
+            logging.debug("Did not scale features")
+            self.training_param_scaled = self.training_param
+            if self.test_param is not None:
+                self.test_param_scaled = self.test_param
+            if self.val_param is not None:
+                self.val_param_scaled = self.val_param
+            return
+    
+        logging.debug(f"Scaled features with {self.standardizer}")
         self.training_param_scaled = self.standardizer.normalize(self.training_param)
-        self.training_snaps_scaled = self.normalizer.normalize(self.training_snaps)
-        self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps_scaled.T).T
         if self.test_param is not None:
             self.test_param_scaled = self.standardizer.normalize_reuse_param(self.test_param)
         if self.val_param is not None:
             self.val_param_scaled = self.standardizer.normalize_reuse_param(self.val_param)
             
+    def scale_outputs(self) -> None:
+        if self.normalizer is None:
+            self.training_snaps_scaled = self.training_snaps 
+            if self.test_snaps is not None:
+                self.test_snaps_scaled = self.test_snaps
+            if self.val_snaps is not None:
+                self.val_snaps_scaled = self.val_snaps
+            logging.debug("Did not scale outputs")
+            return
             
+        self.training_snaps_scaled = self.normalizer.normalize(self.training_snaps)
         if self.test_snaps is not None:
             self.test_snaps_scaled = self.normalizer.normalize_reuse_param(self.test_snaps)
-            self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
         if self.val_snaps is not None:
             self.val_snaps_scaled = self.normalizer.normalize_reuse_param(self.val_snaps)
+        logging.debug(f"Scaledf outputs with {self.normalizer}")
+    
+        
+    def compute_coefficients(self) -> None:
+        """Calculcates the coefficients (output of NN) for training and test.
+        """        
+
+        self.training_coeff = np.matmul(self.basis_func_mtrx, self.training_snaps_scaled.T).T
+        
+        if self.test_snaps is not None and self.test_param is not None:
+            self.test_coeff = np.matmul(self.basis_func_mtrx, self.test_snaps_scaled.T).T
+
+        if self.val_snaps is not None and self.val_param is not None:
             self.val_coeff = np.matmul(self.basis_func_mtrx, self.val_snaps_scaled.T).T
             
             
-    def setup(self) -> None:
+    def setup_tensor_datasets(self) -> None:
         """Generates TensorDatasets for Training and Test.
         """        
         self.dataset_train = TensorDataset(torch.from_numpy(self.training_param_scaled.astype(np.float32)),

@@ -28,15 +28,13 @@ class POD:
         return svd[2][:num_components, :], explained_variance[:num_components]
     
     
-    def perform_POD(self, accuracy: float = 1e-3) -> Tuple[np.ndarray]:
+    def perform_POD(self, accuracy: float = 1e-5) -> Tuple[np.ndarray]:
         """
-
         Args:
         accuracy = vector of dimension of the number of variables that
                             defines the desired accuracy
 
         Returns: basis_fts_matrix, information_content
-
         """
         
         if self.is_time_dependent:

@@ -1,6 +1,7 @@
-"""Verify the code with example from "3D multi-physics uncertainty quantification using physics-based machine learning".
-Surrogate Model Groß Schöneback.
-Original code available at 
+"""Verify the code with example from
+Degen, D., Cacace, M., & Wellmann, F. (2022).
+Non-Intrusive Reduced Basis Method for the Case Study of Groß Schönebeck.
+Zenodo. https://doi.org/10.5281/zenodo.7016427
 """
 from matplotlib import pyplot as plt
 import torch
@@ -90,10 +91,6 @@ def online_stage(mu_online : np.ndarray, model_ckpt_path : Path, bsf_functions: 
     print('Projecting the reduced solution onto the high-dimensional space')
     full_solution = np.dot(rb_coeff_np.flatten(), bsf_functions)
     return rb_coeff_np, full_solution
-
-
-
-
 
 if __name__ == "__main__":
     setup_logger(is_console=True)

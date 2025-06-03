@@ -1,14 +1,15 @@
 import numpy as np
-from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
+from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer, Normalizer
 from torch.utils.data import TensorDataset, DataLoader
 import torch
 from enum import Enum
 import logging
 
 class Normalizations(Enum):
-    MinMax = "MinMax"
-    Mean   = "Mean"
-    Standardizer = "Standardizer" # Z Score
+    MinMax = MinMaxNormalizer()
+    Mean   = MeanNormalizer()
+    Standardizer = Standardizer() # Z Score
+    NoNormalization = None
 
 class NirbDataModule():
     def __init__(self,
@@ -21,7 +22,7 @@ class NirbDataModule():
                  val_param: np.ndarray = None,
                  batch_size: int = 20,
                  normalizer : Normalizations = Normalizations.MinMax,
-                 standardizer_features = Normalizations.Standardizer):
+                 standardizer_features : Normalizations = Normalizations.Standardizer):
         """Data Module for NIRB.
 
         Args:
@@ -36,7 +37,6 @@ class NirbDataModule():
         assert basis_func_mtrx.shape[1] == training_snaps.shape[1]
         assert training_snaps.shape[0] == training_param.shape[0]
         
-        
         self.basis_func_mtrx = basis_func_mtrx 
         self.training_snaps = training_snaps 
         self.training_param = training_param 
@@ -46,46 +46,32 @@ class NirbDataModule():
         self.val_param = val_param
         self.batch_size = batch_size 
 
-        # Initialize the corresponding normalizer class based on the enum value
-        if normalizer == Normalizations.MinMax:
-            self.normalizer = MinMaxNormalizer()
-        elif normalizer == Normalizations.Mean:
-            self.normalizer = MeanNormalizer()
-        elif normalizer == Normalizations.Standardizer:
-            self.normalizer = Standardizer()
-        else:
-            self.normalizer = None
+        self.standardizer = standardizer_features.value
+        self.scale_features()
+        
+        self.normalizer = normalizer.value
         self.scale_outputs()    
 
-        if standardizer_features == Normalizations.Standardizer:
-            self.standardizer = Standardizer() # for parameters
-        elif standardizer_features == Normalizations.MinMax:
-            self.standardizer = MinMaxNormalizer() # for parameters
-        elif standardizer_features == Normalizations.Mean:
-            self.standardizer = MeanNormalizer() # for parameters
-        else:
-            self.standardizer = None
-            
-        self.scale_features()
         self.compute_coefficients()
         self.setup_tensor_datasets()
 
     def scale_features(self) -> None:
         if self.standardizer is None:
-            logging.debug("Did not scale features")
             self.training_param_scaled = self.training_param
             if self.test_param is not None:
                 self.test_param_scaled = self.test_param
             if self.val_param is not None:
                 self.val_param_scaled = self.val_param
+            logging.debug("Did not scale features")
             return
     
-        logging.debug(f"Scaled features with {self.standardizer}")
         self.training_param_scaled = self.standardizer.normalize(self.training_param)
         if self.test_param is not None:
             self.test_param_scaled = self.standardizer.normalize_reuse_param(self.test_param)
         if self.val_param is not None:
             self.val_param_scaled = self.standardizer.normalize_reuse_param(self.val_param)
+        logging.debug(f"Scaled features with {self.standardizer}")
+
             
     def scale_outputs(self) -> None:
         if self.normalizer is None:

@@ -1,4 +1,3 @@
-from math import log
 import numpy as np
 import torch
 from pathlib import Path
@@ -35,17 +34,17 @@ def get_n_outputs(trained_model) -> int:
 
 def main():
 
-    PARAMETER_SPACE = "01"
+    PARAMETER_SPACE = "03"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
     cutoff_datetime = datetime(2025, 5, 30, 14, 15, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
+    IS_OVERWRITE = False
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if path.stat().st_mtime > cutoff_datetime])
 
-
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
+    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
     df_basis_functions = pd.DataFrame([
         {'path': str(p), 'shape': m.shape, 'n_basis': m.shape[0], 'n_points': m.shape[1] if m.ndim > 1 else 1}
         for p, m in {
@@ -84,7 +83,7 @@ def main():
     for chk_pt_path in tqdm(chk_pt_paths, total=len(chk_pt_paths)):
         logging.info(chk_pt_path.relative_to(chk_pt_path.parents[2]))
         version = chk_pt_path.parent.parent.stem
-        logging.debug(version)
+        logging.debug(f'Selected {version}')
 
         
         try:
@@ -104,9 +103,9 @@ def main():
         assert len(filtered_basis_df) == 1
         
         try:
-            ACCURACY = filtered_basis_df.accuracy[0]
-            SUFFIX = filtered_basis_df.suffix[0]
-            basis_functions = filtered_basis_df.basis_functions[0]
+            ACCURACY = filtered_basis_df.accuracy.values[0]
+            SUFFIX = filtered_basis_df.suffix.values[0]
+            basis_functions = filtered_basis_df.basis_functions.values[0]
         except KeyError:
             logging.error("Skipped.")
             continue
@@ -135,6 +134,18 @@ def main():
         )
         ''')
         conn.commit()
+        
+        
+        cursor.execute('''
+        SELECT id FROM nirb_results
+        WHERE norm = ? AND Version = ? AND Accuracy = ? AND Path = ?
+        ''', (SUFFIX, version, ACCURACY, str(chk_pt_path)))
+
+        result = cursor.fetchone()
+        
+        if result is not None and not IS_OVERWRITE:
+            logging.debug(f'Skipped {chk_pt_path.name}: Already in database')
+            continue
         
         if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
             training_snapshots_npy      = np.load(ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures_minus_tgrad.npy")
@@ -305,7 +316,7 @@ def main():
         ''', (
             SUFFIX, q2_scaled, q2_unscaled, r2_scaled, r2_unscaled,
             version, entropy_mse_test, entropy_corr_coeff_test,
-            entropy_mse_train, entropy_corr_coeff_train, ACCURACY, chk_pt_path.stem
+            entropy_mse_train, entropy_corr_coeff_train, ACCURACY, str(chk_pt_path)
         ))
         conn.commit()
         conn.close()
@@ -314,3 +325,5 @@ def main():
 if __name__ == "__main__":
     setup_logger(is_console=True, log_file='E_quality.log')
     main()
+
+

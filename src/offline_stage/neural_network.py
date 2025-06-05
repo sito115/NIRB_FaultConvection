@@ -31,3 +31,15 @@ class NIRB_NN(nn.Module):
         x  = torch.flatten(x, start_dim=1)
         logits = self.layers(x)
         return logits
+    
+
+def get_n_outputs(trained_model) -> int: 
+    last_linear = None
+    for layer in trained_model.model.layers:
+        if isinstance(layer, torch.nn.Linear):
+            last_linear = layer
+
+    if last_linear:
+        return last_linear.out_features
+    else:
+        return -1

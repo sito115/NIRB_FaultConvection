@@ -30,18 +30,18 @@ def main():
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "01"
+    PARAMETER_SPACE = "07"
     DATA_TYPE = "Test"
     # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
-    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
-    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
+    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
+    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
     
     assert DATA_TYPE.lower() in str(data_folder).lower()
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
     # export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
     # export_folder = data_folder / "Exports"
     # export_folder.mkdir(exist_ok=True)
-    export_folder = Path("/Users/thomassimader/Documents/NIRB/data/01/Exports/Movies")
+    export_folder = Path().cwd() / f"data/{PARAMETER_SPACE}/Exports"
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])
     assert len(vtu_files) > 0
@@ -87,6 +87,7 @@ def main():
             df_value = pint_parameters_df.loc[idx, free_parameter]
             assert field_value.units == df_value.units, f"Unit mismatch: {field_value.units} vs {df_value.units}"    
             assert np.isclose( field_value.magnitude, df_value.magnitude, rtol=1e-10)
+            print(f"Parameter {free_parameter} is equal in field data and unit: {field_value} vs {df_value}")
             
         if IS_EXPORT_MP4:
             dip = parameters_pint['dip'].to('degree').magnitude
@@ -102,6 +103,8 @@ def main():
                 'is_diff' : True,
                 'is_ind_cmap':True,
                 'param_string' : param_string,
+                'plot_last_frame' : True,
+                'title_string' : f"{DATA_TYPE} {idx:03d} - ",
                 't_grad': {'t0': t_c,
                           't_grad': t_grad}}
             comsol_data.export_mp4_movie(field='Temperature',

@@ -58,7 +58,8 @@ def main(is_train: bool = False) -> NirbDataModule:
                         )
         
         trainer.fit(model=model,
-                    train_dataloaders=data_module.train_dataloader(shuffle = True))
+                    train_dataloaders=data_module.train_dataloader(shuffle = True),
+                    val_dataloaders=data_module.validation_dataloader())
          
         model.basis_functions = data_module.basis_func_mtrx
         model.test_snaps_scaled = data_module.test_snaps_scaled
@@ -93,7 +94,7 @@ def online_stage(mu_online : np.ndarray, model_ckpt_path : Path, bsf_functions: 
     return rb_coeff_np, full_solution
 
 if __name__ == "__main__":
-    setup_logger(is_console=True)
+    setup_logger(is_console=True, level=logging.INFO)
     data_module = main(is_train=False)
     
     # %% Example: Online stage
@@ -102,7 +103,7 @@ if __name__ == "__main__":
                         1.00768817e-16, 2.57007007e-03]])
 
     mu_online_scaled = data_module.standardizer.normalize_reuse_param(mu_online)
-
+    print(f'{mu_online_scaled=}')
     root = Path(__file__).parent 
 
     rb_coeff_np, full_solution = online_stage(mu_online_scaled,
@@ -113,8 +114,8 @@ if __name__ == "__main__":
     mse_rb = np.mean((rb_coeff_np - source_rb)**2)
     mse_full = np.mean((full_solution - source_full_solution)**2)
 
-    print(f'{mse_full}')
-    print(f'{mse_rb}')
+    print(f'{mse_full=}')
+    print(f'{mse_rb=}')
     
     fig, ax = plt.subplots()
     ax.plot(source_full_solution, label = "Source Solution")

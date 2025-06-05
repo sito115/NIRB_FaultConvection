@@ -10,7 +10,7 @@ from tqdm import tqdm
 import re
 from datetime import datetime
 sys.path.append(str(Path(__file__).parents[1]))
-from src.offline_stage import NirbModule, NirbDataModule, Normalizations
+from src.offline_stage import NirbModule, NirbDataModule, Normalizations, get_n_outputs
 from comsol_module import COMSOL_VTU
 from src.utils import (load_pint_data,
                        setup_logger,
@@ -19,22 +19,9 @@ from src.utils import (load_pint_data,
                        calculate_thermal_entropy_generation)
 
 
-def get_n_outputs(trained_model) -> int: 
-    last_linear = None
-    for layer in trained_model.model.layers:
-        if isinstance(layer, torch.nn.Linear):
-            last_linear = layer
-
-    if last_linear:
-        return last_linear.out_features
-    else:
-        return -1
-
-
-
 def main():
 
-    PARAMETER_SPACE = "03"
+    PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
@@ -44,7 +31,7 @@ def main():
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if path.stat().st_mtime > cutoff_datetime])
 
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
+    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
     df_basis_functions = pd.DataFrame([
         {'path': str(p), 'shape': m.shape, 'n_basis': m.shape[0], 'n_points': m.shape[1] if m.ndim > 1 else 1}
         for p, m in {
@@ -66,6 +53,7 @@ def main():
     df_basis_functions['match'] = df_basis_functions['path'].apply(lambda x: re.search(PATTERN, Path(x).stem))
     df_basis_functions['accuracy'] = df_basis_functions['match'].apply(lambda x: float(x.group(1)) if x else np.nan)
     df_basis_functions['suffix'] = df_basis_functions['match'].apply(lambda x: x.group(2)  if x else '')
+    df_basis_functions.to_csv(ROOT / "df_basis_functions.csv")
     logging.debug(f'Loaded {len(df_basis_functions)} different basis function')
     logging.debug(df_basis_functions)
     
@@ -178,7 +166,8 @@ def main():
             test_snaps=test_snapshots,
             training_param=training_parameters,
             test_param=test_parameters,
-            normalizer=scaling
+            normalizer=scaling,
+            standardizer_features=Normalizations.Standardizer
         )
         
         param_folder = ROOT / "Exports"

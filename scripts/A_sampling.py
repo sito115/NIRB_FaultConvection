@@ -22,7 +22,7 @@ from src.sampling import Parameter
 def main():
     ### SETUP
     ROOT = Path(__file__).parent
-    N_TRAINING = 0
+    N_TRAINING = 150
     N_TEST = 20
     pint_pandas.PintType.ureg.formatter.default_format = "#D~"
     random.seed(42)
@@ -33,8 +33,8 @@ def main():
     # parameters.append(Parameter("fault_k_trans", [1e-18, 1e-12], unit="m^2", is_log=True))
     # parameters.append(Parameter("fault_k_long", [1e-18,1e-12], unit="m^2", is_log=True))
     # parameters.append(Parameter("host_k", [1e-18, 1e-15],  unit="m^2", is_log=True))
-    # parameters.append(Parameter("T_h", [195, 220], unit = "degC", is_log=False))
-    parameters.append(Parameter("dip", [50, 90], unit = "deg", is_log=False))
+    parameters.append(Parameter("T_h", [130, 220], unit = "degC", is_log=False))
+    # parameters.append(Parameter("dip", [50, 90], unit = "deg", is_log=False))
 
     units_dict = {param.name: f'pint[{param.unit}]' for param in parameters}
     
@@ -52,7 +52,7 @@ def main():
         df_traing = df_traing.astype(units_dict)
         
         df_traing = df_traing.pint.to_base_units().pint.dequantify()
-        df_traing.to_csv(ROOT / "training_samples.csv", index=False)
+        df_traing.to_csv(ROOT / "training_samples.csv", index=False, float_format="%.3g")
         print(df_traing)
 
     ### GENERATE TEST SAMPLES (RANDOM)
@@ -70,7 +70,7 @@ def main():
         df_test = df_test.astype(units_dict)
         df_test = df_test.pint.to_base_units().pint.dequantify()
 
-        df_test.to_csv(ROOT / "test_samples.csv", index=False)
+        df_test.to_csv(ROOT / "test_samples.csv", index=False, float_format="%.3g")
         print(df_test)
 
 if __name__ == "__main__":

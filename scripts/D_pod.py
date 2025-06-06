@@ -13,15 +13,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 if __name__ == "__main__":
-    PARAMETER_SPACE = "05"
+    PARAMETER_SPACE = "07"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
-    ACCURACY = 1e-6
+    ACCURACY = 1e-5
     IS_EXPORT = True
-    SUFFIX = "min_max_init_grad"
+    SUFFIX = "mean"
     
     # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" / "s100_100_100_b0_4000_0_5000_-4000_0" / "Exports" / f"{DATA_TYPE}_temperatures_minus_tgrad.npy" #
-    import_path = ROOT / "data" / PARAMETER_SPACE / "Training" / f"{DATA_TYPE}_temperatures_minus_tgrad.npy" #
+    # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingOriginal" / f"{DATA_TYPE}_temperatures_minus_tgrad.npy" #
+    import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingOriginal" / f"{DATA_TYPE}_temperatures.npy" #
     # import_path = ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" /  f"{DATA_TYPE}_temperatures_minus_tgrad.npy"
     export_folder = import_path.parent.parent.joinpath("BasisFunctions")
     export_folder.mkdir(exist_ok=True)

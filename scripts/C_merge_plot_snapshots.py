@@ -23,15 +23,15 @@ def main():
     """Extract "EXPORT_FIELD" from  multiple vtu-Files and save it as npy-File.
     Optionally create mp4 movies of simulations. 
     """    
-    IS_EXPORT_MP4 = True           # Export MP4 movies
-    EXPORT_FIELD = "Temperature"   # Which field to save 
-    IS_EXPORT_NPY = False           # export fields as npy, to use when n_points are the SAME for all vtu files
+    IS_EXPORT_MP4 = False           # Export MP4 movies
+    EXPORT_FIELD = "Total_Darcy_velocity_magnitude"   # Which field to save 
+    IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
     IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
     PARAMETER_SPACE = "07"
-    DATA_TYPE = "Test"
+    DATA_TYPE = "Training"
     # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
     # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
     data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
@@ -60,10 +60,10 @@ def main():
     N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
         
     if IS_EXPORT_NPY:
-        temperatures      = np.zeros((N_SNAPS, N_TIME_STEPS, N_POINTS))
-        temperatures_diff = np.zeros_like(temperatures)
+        export_array      = np.zeros((N_SNAPS, N_TIME_STEPS, N_POINTS))
+        temperatures_diff = np.zeros_like(export_array)
     if IS_EXPORT_JOBLIB:
-        temperatures = [np.array([]) for _ in range(N_SNAPS)]
+        export_array = [np.array([]) for _ in range(N_SNAPS)]
         temperatures_diff =  [np.array([]) for _ in range(N_SNAPS)]
     
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
@@ -120,28 +120,31 @@ def main():
             df.sort_index(key=lambda x : x.str.lower()).to_csv(export_folder / f"{comsol_data.vtu_path.stem}_parameters.csv")
             
         if IS_EXPORT_NPY or IS_EXPORT_JOBLIB: # min max temperatures differences to initial state (pure conduction)
-            temp_array = comsol_data.get_array('Temperature')
-            temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
+            temp_array = comsol_data.get_array(EXPORT_FIELD)
+                                               
+            if EXPORT_FIELD == "Temperature":
+                temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
             
             if IS_EXPORT_NPY:
                 time_len = temp_array.shape[0]
-                temperatures[idx, :time_len, :] = temp_array
-                temperatures_diff[idx, :time_len, :] = temp_diff
+                export_array[idx, :time_len, :] = temp_array
+                if EXPORT_FIELD == "Temperature":
+                    temperatures_diff[idx, :time_len, :] = temp_diff
             
             if IS_EXPORT_JOBLIB:
-                temp_diff = temp_array - (t_c - t_grad * comsol_data.mesh.points[:,-1])
-                temperatures[idx] = temp_array
-                temperatures_diff[idx] = temp_diff
+                export_array[idx] = temp_array
+                if EXPORT_FIELD == "Temperature":
+                    temperatures_diff[idx] = temp_diff
 
     if IS_EXPORT_NPY:
-        np.save(export_folder / f"{DATA_TYPE}_temperatures.npy", temperatures)
-        np.save(export_folder / f"{DATA_TYPE}_temperatures_minus_tgrad.npy", temperatures_diff )
+        np.save(export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}.npy", export_array)
+        np.save(export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}_minus_tgrad.npy", temperatures_diff )
         total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".npy")  / (1024 * 1024)
         print(f"Total size of all mapped .vti files: {total_size} MB")
         
     if IS_EXPORT_JOBLIB:
-        dump(temperatures,export_folder / f"{DATA_TYPE}_temperatures.joblib")
-        dump(temperatures_diff, export_folder / f"{DATA_TYPE}_temperatures_minus_tgrad.joblib")
+        dump(export_array,export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}.joblib")
+        dump(temperatures_diff, export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}_tgrad.joblib")
         print("Joblib export successfull")
         total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".joblib")  / (1024 * 1024)
         print(f"Total size of all mapped .vti files: {total_size} MB")

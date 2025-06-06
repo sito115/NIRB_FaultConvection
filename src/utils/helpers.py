@@ -97,7 +97,7 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
         ureg (pint.UnitRegistry): _description_
 
     Returns:
-        Tuple[pint.Quantity]: (s0_total [W/(K * m^3)], entropy_number [-])
+        Tuple[pint.Quantity]: (s0_total [W/(K)], entropy_number [-]), Volumetric entropy generation [W/(K*m^3)]
 
     """      
     ref_mesh.point_data["temp_field"] = data

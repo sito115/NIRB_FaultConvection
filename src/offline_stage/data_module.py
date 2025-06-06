@@ -10,6 +10,7 @@ class Normalizations(Enum):
     Mean   = MeanNormalizer()
     Standardizer = Standardizer() # Z Score
     NoNormalization = None
+    
 
 class NirbDataModule():
     def __init__(self,

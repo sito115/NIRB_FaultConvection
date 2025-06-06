@@ -16,14 +16,13 @@ class NirbModule(L.LightningModule):
                  n_outputs: int,
                  activation = nn.Sigmoid(),
                  learning_rate : float = 1e-3,
-                 batch_size : int = 20):
+                 **kwargs):
         super().__init__()
-        self.save_hyperparameters(ignore=['activation'])
+        self.save_hyperparameters()
         self.learning_rate = learning_rate
         self.loss = nn.MSELoss()
         self.activation = activation
         self.model = NIRB_NN(n_inputs, hidden_units, n_outputs, self.activation)
-        self.batch_size = batch_size
         self.msa_metric = MeanAbsoluteError()
         self.test_snaps_scaled : np.ndarray = None
         self.val_snaps_scaled : np.ndarray = None

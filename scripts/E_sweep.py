@@ -1,6 +1,6 @@
 import lightning as L
 from pathlib import Path
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import TensorBoardLogger
 import optuna
 from torch import nn
@@ -14,21 +14,22 @@ from src.utils import load_pint_data
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
     hidden1 = trial.suggest_int("hiden1", low = 2, high = 300)
-    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 5)
+    num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 4)
     hidden_layers_betw = [
         trial.suggest_int(f"hidden_layers_betw{i}", 50, 400, step=2)
         for i in range(num_inbetw_layers)
     ]
     hidden6 = trial.suggest_int("hiden6", low = 30,  high = 300 ,step=2)
     
-    suffix = trial.suggest_categorical("normalization", ["min_max_init_grad", "mean_init_grad"])
+    suffix = trial.suggest_categorical("scaler_output", ["min_max_init_grad", "mean"])
+    scaler_features = trial.suggest_categorical("scaler_features", ["Standardizer", "Mean", "MinMax"])
     accuracy = trial.suggest_categorical("accuracy", [1e-5, 1e-6])
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 5e-6, 2e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 50, 600)
+    batch_size = trial.suggest_int("batch_size", 10, 100)
 
-    activation_name = trial.suggest_categorical("activation", ["sigmoid", "relu", "leaky_relu"])
+    activation_name = trial.suggest_categorical("activation", ["sigmoid", "relu", "leaky_relu", "tanh"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -38,24 +39,41 @@ def objective(trial: optuna.Trial) -> float:
     elif activation_name =="tanh":
         activation_fn = nn.Tanh()
 
+    
 
-    assert ROOT.exists(), f"Not found: {ROOT}"
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
-    basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
-    if 'init' in suffix.lower() and 'grad' in suffix.lower():
-        train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures_minus_tgrad.npy" 
-        test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures_minus_tgrad.npy" 
+    if PROJECTION == "Mapped":
+        export_root_train = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "Exports"
+        export_root_test = ROOT / f"Test{PROJECTION}" / control_mesh_suffix / "Exports"
+        basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+
     else:
-        train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
-        test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy" 
+        export_root_train = ROOT / f"Training{PROJECTION}" 
+        export_root_test = ROOT / f"Test{PROJECTION}"
+        basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+
+
+    assert export_root_train.exists(), f"Export root train {export_root_train} does not exist."
+    assert export_root_test.exists(), f"Export root test {export_root_test} does not exist."
+    assert basis_func_path.exists(), f"Basis function path {basis_func_path} does not exist."
+    basis_functions         = np.load(basis_func_path)
+    
+    if 'init' in suffix.lower() and 'grad' in suffix.lower():
+        logging.debug("Entered 'init' and 'grad' condition")
+        training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
+        test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
+    else:
+        logging.debug("Entered else statement condition")
+        training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
+        test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
+    training_snapshots  = training_snapshots_npy[:, -1, :]
+    test_snapshots      = test_snapshots_npy[:, -1, :]
+        
+        
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-
     
-    basis_functions         = np.load(basis_func_path)
-    training_snapshots      = np.load(train_snapshots_path)
+    
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
-    test_snapshots          = np.load(test_snapshots_path)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
     
     # mask = ~(training_snapshots == 0).all(axis=(1, 2)) # omit indices that are not computed yet
@@ -70,29 +88,22 @@ def objective(trial: optuna.Trial) -> float:
     assert len(training_snapshots) == len(training_parameters)
     # Prepare data
 
-    if 'init' in suffix.lower() and 'grad' in suffix.lower():
-        training_snapshots  = training_snapshots[:, -1, :] # last time step
-        test_snapshots      = test_snapshots[:, -1, :]
-        logging.debug("Entered 'init' and 'grad' condition")
-    elif 'init' in suffix.lower():
-        training_snapshots  = training_snapshots[:, -1, :] -  training_snapshots[:, 0, :] 
-        test_snapshots      = test_snapshots[:, -1, :] - test_snapshots[:, 0, :]
-        logging.debug("Entered 'init' condition")
+    if scaler_features.lower() == "standardizer":
+        scaler_features = Normalizations.Standardizer
+    elif scaler_features.lower() == "mean":
+        scaler_features = Normalizations.Mean
+    elif scaler_features.lower() == "min_max":
+        scaler_features = Normalizations.MinMax
     else:
-        training_snapshots  = training_snapshots[:, -1, :]
-        test_snapshots      = test_snapshots[:, -1, :]
-        logging.debug("Entered else statement condition")
-    
+        raise ValueError("Invalid scaler for features.")
+
 
     if "mean" in suffix.lower():
-        scaling = Normalizations.Mean
+        scaling_outputs = Normalizations.Mean
     elif "min_max" in suffix.lower():
-        scaling = Normalizations.MinMax
+        scaling_outputs = Normalizations.MinMax
     else:
         raise ValueError("Invalid suffix.")
-    logging.debug(f"Chose {scaling}")
-
-
 
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
@@ -101,7 +112,8 @@ def objective(trial: optuna.Trial) -> float:
         val_param=test_parameters,
         val_snaps=test_snapshots,
         batch_size=batch_size,
-        normalizer =scaling,
+        standardizer_features=scaler_features,
+        normalizer =scaling_outputs,
     )
     
     n_inputs = training_parameters.shape[1]
@@ -111,7 +123,10 @@ def objective(trial: optuna.Trial) -> float:
                        [hidden1] + hidden_layers_betw + [hidden6],
                        n_outputs,
                        activation=activation_fn,
-                       learning_rate=lr)
+                       learning_rate=lr,
+                       batch_size=batch_size,
+                       scaler_features=scaler_features,
+                       scaler_outputs=scaling_outputs,)
 
     optuna_pruning = OptunaPruning(
         trial, 
@@ -128,10 +143,10 @@ def objective(trial: optuna.Trial) -> float:
     model_ckpt = ModelCheckpoint(
             monitor = "Q2_val",
             save_last=True,
-            save_top_k=10,
+            save_top_k=3,
             mode="min",
             filename = "{epoch:02d}-{Q2_val:.2e}",
-            every_n_train_steps = 400
+            every_n_train_steps = 500
         )
 
     logger_dir_name = "optuna_logs"
@@ -143,7 +158,7 @@ def objective(trial: optuna.Trial) -> float:
                         logger=logger,
                         callbacks=[r2_callback, optuna_pruning, model_ckpt],
                         enable_progress_bar=False,
-                        max_time={"minutes": 50},
+                        max_time={"minutes": 70},
                         )
     
     model.basis_functions = data_module.basis_func_mtrx
@@ -165,18 +180,20 @@ def objective(trial: optuna.Trial) -> float:
     return float(val_loss)
 
 if __name__ == "__main__":
-    N_STEPS = 90_000 #100_000 #20_000
+    N_STEPS = 100_000 #100_000 #20_000
+    PROJECTION = "Original"  # "Original" or "Mapped"
+    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
     # ACCURACY = 1e-5
     # SUFFIX = "min_max_init_grad"
-    PARAMETER_SPACE = "03"
+    PARAMETER_SPACE = "07"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     STUDY_NAME = "sweep"
-    N_JOBS = 3
+    N_JOBS = 4
     N_TRIALS = 150
 
 
     assert ROOT.exists(), f"Not found: {ROOT}"
-    db_path = ROOT / "db_total.sqlite3" #/f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
+    db_path = ROOT / "optuna_db.sqlite3" #/f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
         "study_name": STUDY_NAME,
@@ -184,7 +201,7 @@ if __name__ == "__main__":
     }
     study = optuna.create_study(direction="minimize",
                                 pruner=optuna.pruners.MedianPruner(
-                                    n_startup_trials=30,
+                                    n_startup_trials=N_TRIALS * 0.33,
                                     n_warmup_steps=int(N_STEPS*0.33),
                                     n_min_trials=20
                                 ),

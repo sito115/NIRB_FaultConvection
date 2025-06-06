@@ -4,7 +4,6 @@ The input are the respective parameters from A_sampling.py
 The training and test outputs (coefficients for basis functions) are computed in the NirbDataModule class.
 Everything for the definition of the NN is defined in the NirbModule(L.LightningModule) class.
 """
-
 import lightning as L
 from torch import nn
 from lightning.pytorch.loggers import TensorBoardLogger
@@ -26,6 +25,14 @@ def main():
     seed_everything(42) 
     IS_RUN_OPTUNA = False
     
+    
+    N_STEPS = 250_000 
+    PARAMETER_SPACE = "07"
+    ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
+    assert ROOT.exists(), f"Not found: {ROOT}"
+    N_DEVICES = 3
+    control_mesh_suffix =  None #"s100_100_100_b0_4000_0_5000_-4000_-0"
+    
     if IS_RUN_OPTUNA:
         sqlite_file = Path("/Users/thomassimader/Documents/NIRB/data/01/db_total_new.sqlite3")
         assert sqlite_file.exists()
@@ -38,11 +45,12 @@ def main():
     else:
         param = {
             'params_accuracy' : 1e-06 ,
-            'params_batch_size' : 50,
-            'params_lr': 0.00011386243006164901,
-            'params_normalization': 'mean_init_grad',
+            'params_batch_size' : 25,
+            'params_lr': 1e-3,
+            'params_normalization': 'min_max_init_grad', ##'min_max_init_grad',
             'params_activation': 'sigmoid',
-            'layers' : [228, 216, 208, 152, 244, 250]
+            'layers' : [26, 100, 300, 300, 100]
+
         }
         
         
@@ -61,14 +69,7 @@ def main():
         # n_inputs: 2
         # n_outputs: 46
 
-    N_STEPS = 250_000 
-    PARAMETER_SPACE = "03"
-    ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
-    assert ROOT.exists(), f"Not found: {ROOT}"
-    N_DEVICES = 3
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
 
-    
     for idx, row in df_opt_trunc.iterrows():
         logging.info(row)
         ACCURACY = row.params_accuracy if 'params_accuracy' in row.index else 1e-05
@@ -95,22 +96,25 @@ def main():
             activation_fn = nn.Tanh()
     
         
-        if control_mesh_suffix is None:
-            basis_func_path = ROOT / "TrainingMapped" /  "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
+        if PARAMETER_SPACE == "07":
+            basis_func_path = ROOT /  "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
             if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-                train_snapshots_path = ROOT / "TrainingMapped" / "Training_temperatures_minus_tgrad.npy" 
-                test_snapshots_path = ROOT / "TestMapped" / "Test_temperatures_minus_tgrad.npy" 
+                train_snapshots_path = ROOT / "TrainingOriginal" / "Training_Temperature_minus_tgrad.npy" 
+                test_snapshots_path = ROOT / "TestOriginal" / "Test_Temperature_minus_tgrad.npy" 
             else:
-                train_snapshots_path = ROOT / "TrainingMapped" /  "Training_temperatures.npy"
-                test_snapshots_path = ROOT / "TestMapped" /  "Test_temperatures.npy" 
-        else:
+                train_snapshots_path = ROOT / "TrainingOriginal" /  "Training_Temperature.npy"
+                test_snapshots_path = ROOT / "TestOriginal" /  "Test_Temperature.npy" 
+        elif PARAMETER_SPACE == "01":
             basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
             if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-                train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures_minus_tgrad.npy" 
-                test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures_minus_tgrad.npy" 
+                train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_Temperature_minus_tgrad.npy" 
+                test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_Temperature_minus_tgrad.npy" 
             else:
-                train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy"
-                test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_temperatures.npy" 
+                train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_Temperature.npy"
+                test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_Temperature.npy" 
+        else:
+            raise NotImplementedError(f"Paths for parameter space {PARAMETER_SPACE} not implemented yet.")
+        
         train_param_path = ROOT / "training_samples.csv"
         test_param_path = ROOT / "test_samples.csv"
 

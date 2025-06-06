@@ -21,22 +21,26 @@ from src.utils import (load_pint_data,
 
 def main():
 
-    PARAMETER_SPACE = "01"
+    PARAMETER_SPACE = "07"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
-    cutoff_datetime = datetime(2025, 5, 30, 14, 15, 0).timestamp()
+    cutoff_datetime = datetime(2025, 6, 6, 15, 0, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
     IS_OVERWRITE = False
+    PROJECTION = "Original"  # "Mapped" or "Original"
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if path.stat().st_mtime > cutoff_datetime])
 
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_0"
+    control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_0"
+    
+    basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "BasisFunctions" if control_mesh_suffix else ROOT / "BasisFunctions"
+    
     df_basis_functions = pd.DataFrame([
         {'path': str(p), 'shape': m.shape, 'n_basis': m.shape[0], 'n_points': m.shape[1] if m.ndim > 1 else 1}
         for p, m in {
             path: np.load(path) 
-            for path in (ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions").rglob('*.npy') if 'basis' in path.stem
+            for path in basis_functions_folder.rglob('*.npy') if 'basis' in path.stem
         }.items()
     ])
     df_basis_functions['basis_functions'] = df_basis_functions['path'].apply(np.load)
@@ -64,7 +68,10 @@ def main():
         training_parameters[:, 0] = np.log10(training_parameters[:, 0])
         test_parameters[:, 0] = np.log10(test_parameters[:, 0])
 
-    comsol_data = COMSOL_VTU(ROOT / "TrainingMapped" / control_mesh_suffix /f"Training_000_{control_mesh_suffix}.vtu")
+    if control_mesh_suffix is not None:
+        comsol_data = COMSOL_VTU(ROOT / f"Training{PROJECTION}" / control_mesh_suffix /f"Training_000_{control_mesh_suffix}.vtu")
+    else:
+        comsol_data = COMSOL_VTU(ROOT / "TrainingOriginal" / "Training_000.vtu")
     comsol_data.mesh.clear_data()
 
 
@@ -82,6 +89,9 @@ def main():
         
         trained_model = trained_model.to('cpu')
         trained_model.eval()
+        checkpoint = torch.load(chk_pt_path, map_location='cpu')
+        epoch = checkpoint.get('epoch', None)
+        global_step = checkpoint.get('global_step', None)
         
         n_outputs = get_n_outputs(trained_model)
         filtered_basis_df = df_basis_functions.loc[df_basis_functions['n_basis'] == n_outputs]
@@ -113,6 +123,8 @@ def main():
             Q2_unscaled FLOAT,
             R2_scaled FLOAT,
             R2_unscaled FLOAT,
+            Epoch INTEGER,
+            Global_step INTEGER,
             Entropy_MSE_test FLOAT,
             Entropy_R2_test FLOAT,
             Entropy_MSE_train FLOAT,
@@ -135,22 +147,33 @@ def main():
             logging.debug(f'Skipped {chk_pt_path.name}: Already in database')
             continue
         
+        if PROJECTION == "Mapped":
+            export_root_train = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "Exports"
+            export_root_test = ROOT / f"Test{PROJECTION}" / control_mesh_suffix / "Exports"
+        else:
+            export_root_train = ROOT / f"Training{PROJECTION}" 
+            export_root_test = ROOT / f"Test{PROJECTION}"
+            
+        assert export_root_train.exists(), f"Export root train {export_root_train} does not exist."
+        assert export_root_test.exists(), f"Export root test {export_root_test} does not exist."
+            
         if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-            training_snapshots_npy      = np.load(ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures_minus_tgrad.npy")
-            test_snapshots_npy          = np.load(ROOT / "TestMapped" / control_mesh_suffix /"Exports" / "Test_temperatures_minus_tgrad.npy")
+            training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
+            test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
             training_snapshots  = training_snapshots_npy[:, -1, :]
             test_snapshots      = test_snapshots_npy[:, -1, :]
         elif 'init' in SUFFIX.lower():
-            training_snapshots_npy      = np.load(ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy")
-            test_snapshots_npy          = np.load(ROOT / "TestMapped" / control_mesh_suffix /"Exports" / "Test_temperatures.npy")
+            training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
+            test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
             training_snapshots  = training_snapshots_npy[:, -1, :]
             training_snapshots  = training_snapshots_npy[:, -1, :] -  training_snapshots_npy[:, 0, :] # last time step
             test_snapshots      = test_snapshots_npy[:, -1, :] - test_snapshots_npy[:, 0, :]
         else:
-            training_snapshots_npy      = np.load(ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_temperatures.npy")
-            test_snapshots_npy          = np.load(ROOT / "TestMapped" / control_mesh_suffix /"Exports" / "Test_temperatures.npy")
+            training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
+            test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
             training_snapshots  = training_snapshots_npy[:, -1, :]
             test_snapshots      = test_snapshots_npy[:, -1, :]
+
 
         if "mean" in SUFFIX.lower():
             scaling = Normalizations.Mean
@@ -288,14 +311,16 @@ def main():
             INSERT INTO nirb_results (
                 norm, Q2_scaled, Q2_unscaled, R2_scaled, R2_unscaled,
                 Version, Entropy_MSE_test, Entropy_R2_test,
-                Entropy_MSE_train, Entropy_R2_train, Accuracy, Path
+                Entropy_MSE_train, Entropy_R2_train, Accuracy, Path, Epoch, Global_step
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(norm, Version, Accuracy, Path) DO UPDATE SET
                 Q2_scaled = excluded.Q2_scaled,
                 Q2_unscaled = excluded.Q2_unscaled,
                 R2_scaled = excluded.R2_scaled,
                 R2_unscaled = excluded.R2_unscaled,
+                Global_step = excluded.Global_step,
+                Epoch  = excluded.Epoch,
                 Entropy_MSE_test = excluded.Entropy_MSE_test,
                 Entropy_R2_test = excluded.Entropy_R2_test,
                 Entropy_MSE_train = excluded.Entropy_MSE_train,
@@ -305,7 +330,7 @@ def main():
         ''', (
             SUFFIX, q2_scaled, q2_unscaled, r2_scaled, r2_unscaled,
             version, entropy_mse_test, entropy_corr_coeff_test,
-            entropy_mse_train, entropy_corr_coeff_train, ACCURACY, str(chk_pt_path)
+            entropy_mse_train, entropy_corr_coeff_train, ACCURACY, str(chk_pt_path), epoch, global_step,
         ))
         conn.commit()
         conn.close()

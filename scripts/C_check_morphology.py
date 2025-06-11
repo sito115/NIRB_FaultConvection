@@ -9,7 +9,8 @@ from comsol_module.comsol_classes import COMSOL_VTU
 
 ROOT = Path().cwd()
 PARAMETER_SPACE = "07"
-DATA_TYPE = "Training"
+FIELD_NAME = "Temperature"
+DATA_TYPE = "Test"
 IS_LOAD_NPY : bool = True
 control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_-0"
 
@@ -25,14 +26,14 @@ else:
 export_folder = ROOT / "data" / PARAMETER_SPACE / "Exports" / "Zero-Crossings"
 export_folder.mkdir(exist_ok=True)
 
-temperatures_diff = np.load(import_folder  / f"{DATA_TYPE}_temperatures_minus_tgrad.npy" )
+temperatures_diff = np.load(import_folder  / f"{DATA_TYPE}_{FIELD_NAME}_minus_tgrad.npy" )
 N_SNAPS = len(temperatures_diff)
 
 comsol_data.mesh.clear_data()
 
 bounds = comsol_data.mesh.bounds
-start = [bounds.x_max / 2, bounds.y_min, bounds.z_min / 2]
-end = [bounds.x_max / 2, bounds.y_max, bounds.z_min / 2]
+start = [bounds[1] / 2, bounds[2], bounds[4] / 2]
+end = [bounds[1]/ 2, bounds[3],  bounds[4] / 2]
 
 plt.ion()
 resolution = 100

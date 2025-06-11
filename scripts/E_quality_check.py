@@ -5,12 +5,16 @@ import sys
 import pandas as pd
 import pint
 import sqlite3
+
 import logging
 from tqdm import tqdm
 import re
+from enum import Enum
 from datetime import datetime
 sys.path.append(str(Path(__file__).parents[1]))
-from src.offline_stage import NirbModule, NirbDataModule, Normalizations, get_n_outputs
+from src.offline_stage import NirbModule, NirbDataModule, get_n_outputs, Normalizations
+from src.pod import MinMaxNormalizer, MeanNormalizer, Standardizer, Normalizer
+import src.offline_stage 
 from comsol_module import COMSOL_VTU
 from src.utils import (load_pint_data,
                        setup_logger,
@@ -19,22 +23,47 @@ from src.utils import (load_pint_data,
                        calculate_thermal_entropy_generation)
 
 
+    
+# Create dummy enum with string values for safe unpickling
+torch.serialization.add_safe_globals([torch.nn.modules.activation.Tanh,
+                                        torch.nn.modules.activation.Sigmoid,
+                                        torch.nn.modules.activation.LeakyReLU,
+                                        torch.nn.modules.activation.ReLU,
+                                        Normalizations,
+                                        MinMaxNormalizer,
+                                        MeanNormalizer,
+                                        Normalizer,
+                                        src.offline_stage.data_module.Normalizations,
+                                        np.dtypes.Float64DType,
+                                        np.float64,
+                                        np.int64,
+                                        np._core.multiarray.scalar,
+                                        np.dtype,
+                                        Standardizer])
+
 def main():
 
     PARAMETER_SPACE = "07"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
-    cutoff_datetime = datetime(2025, 6, 6, 15, 0, 0).timestamp()
+    cutoff_datetime = datetime(2025, 6, 5, 15, 0, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
-    IS_OVERWRITE = False
+    IS_OVERWRITE = True
     PROJECTION = "Original"  # "Mapped" or "Original"
+    FIELD_NAME = "Temperature"
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if path.stat().st_mtime > cutoff_datetime])
+    chk_pt_paths = [s for s in chk_pt_paths if 'zc' not in str(s)]
+    if FIELD_NAME == "Temperature":
+        chk_pt_paths = [s for s in chk_pt_paths if 'entropy' not in str(s)]
+    elif FIELD_NAME == "EntropyNum":
+        chk_pt_paths = [s for s in chk_pt_paths if FIELD_NAME.lower() in str(s)]
 
     control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_0"
     
-    basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "BasisFunctions" if control_mesh_suffix else ROOT / "BasisFunctions"
+    basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" if control_mesh_suffix else ROOT / f"BasisFunctions{FIELD_NAME}"
+    basis_functions_folder.exists()
     
     df_basis_functions = pd.DataFrame([
         {'path': str(p), 'shape': m.shape, 'n_basis': m.shape[0], 'n_points': m.shape[1] if m.ndim > 1 else 1}
@@ -57,7 +86,7 @@ def main():
     df_basis_functions['match'] = df_basis_functions['path'].apply(lambda x: re.search(PATTERN, Path(x).stem))
     df_basis_functions['accuracy'] = df_basis_functions['match'].apply(lambda x: float(x.group(1)) if x else np.nan)
     df_basis_functions['suffix'] = df_basis_functions['match'].apply(lambda x: x.group(2)  if x else '')
-    df_basis_functions.to_csv(ROOT / "df_basis_functions.csv")
+    df_basis_functions.to_csv(ROOT / f"df_basis_functions_{FIELD_NAME}.csv")
     logging.debug(f'Loaded {len(df_basis_functions)} different basis function')
     logging.debug(df_basis_functions)
     
@@ -80,10 +109,10 @@ def main():
         version = chk_pt_path.parent.parent.stem
         logging.debug(f'Selected {version}')
 
-        
+
         try:
             trained_model : NirbModule = NirbModule.load_from_checkpoint(chk_pt_path)
-        except FileNotFoundError as e:
+        except (FileNotFoundError, ValueError) as e:
             logging.error(e)
             continue
         
@@ -92,6 +121,9 @@ def main():
         checkpoint = torch.load(chk_pt_path, map_location='cpu')
         epoch = checkpoint.get('epoch', None)
         global_step = checkpoint.get('global_step', None)
+        
+        
+        scaler_features = checkpoint['hyper_parameters'].get('scaler_features', 'Standardizer')
         
         n_outputs = get_n_outputs(trained_model)
         filtered_basis_df = df_basis_functions.loc[df_basis_functions['n_basis'] == n_outputs]
@@ -111,7 +143,7 @@ def main():
         logging.info(f"Loaded {version}")
         logging.info(f'{ACCURACY=}, {SUFFIX=}')  
         
-        conn = sqlite3.connect(ROOT / "results_all.db")
+        conn = sqlite3.connect(ROOT / f"results_all{FIELD_NAME}.db")
         cursor = conn.cursor()
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS nirb_results (
@@ -176,12 +208,22 @@ def main():
 
 
         if "mean" in SUFFIX.lower():
-            scaling = Normalizations.Mean
+            scaling_output = Normalizations.Mean
         elif "min_max" in SUFFIX.lower():
-            scaling = Normalizations.MinMax
+            scaling_output = Normalizations.MinMax
         else:
             raise ValueError("Invalid suffix.")
+        
 
+        if  "standard" in scaler_features.lower():
+            scaling_features = Normalizations.Standardizer
+        elif "min_max" in scaler_features.lower() or "minmax" in scaler_features.lower():
+            scaling_features = Normalizations.MinMax
+        elif "mean" in scaler_features.lower():
+            scaling_features = Normalizations.Mean
+        else:
+            raise ValueError(f"Unknown scaler_features: {scaler_features}")
+        logging.info(f'Scaling output: {scaling_output}, Scaling features: {scaling_features}')
 
         data_module = NirbDataModule(
             basis_func_mtrx=basis_functions,
@@ -189,8 +231,8 @@ def main():
             test_snaps=test_snapshots,
             training_param=training_parameters,
             test_param=test_parameters,
-            normalizer=scaling,
-            standardizer_features=Normalizations.Standardizer
+            normalizer=scaling_output,
+            standardizer_features=scaling_features
         )
         
         param_folder = ROOT / "Exports"
@@ -333,11 +375,25 @@ def main():
             entropy_mse_train, entropy_corr_coeff_train, ACCURACY, str(chk_pt_path), epoch, global_step,
         ))
         conn.commit()
+        
+        
+        
+
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         conn.close()
 
 
 if __name__ == "__main__":
-    setup_logger(is_console=True, log_file='E_quality.log')
+    setup_logger(is_console=True, log_file='E_quality.log', level = logging.INFO)
     main()
 
 

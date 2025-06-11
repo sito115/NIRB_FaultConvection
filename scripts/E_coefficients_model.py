@@ -23,23 +23,23 @@ from src.utils import load_pint_data, plot_data, setup_logger
 
 def main():
     seed_everything(42) 
-    IS_RUN_OPTUNA = False
+    IS_RUN_OPTUNA = True
     
     
-    N_STEPS = 250_000 
+    N_STEPS = 120_000 
     PARAMETER_SPACE = "07"
     ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
     assert ROOT.exists(), f"Not found: {ROOT}"
-    N_DEVICES = 3
+    N_DEVICES = 2
     control_mesh_suffix =  None #"s100_100_100_b0_4000_0_5000_-4000_-0"
     
     if IS_RUN_OPTUNA:
-        sqlite_file = Path("/Users/thomassimader/Documents/NIRB/data/01/db_total_new.sqlite3")
+        sqlite_file = ROOT / "optuna_db.sqlite3"
         assert sqlite_file.exists()
         storage = f"sqlite:///{sqlite_file}"
-        loaded_study = optuna.load_study(study_name="sweep1", storage= storage)
+        loaded_study = optuna.load_study(study_name="sweep", storage= storage)
         df_opt : pd.DataFrame = loaded_study.trials_dataframe()
-        trials = [87, 7, 38, 93, 74]
+        trials = [148, 67, 114, 100, 71, 81, 110, 145]
         df_opt_trunc = df_opt[df_opt["number"].isin(trials)]
     
     else:
@@ -75,7 +75,7 @@ def main():
         ACCURACY = row.params_accuracy if 'params_accuracy' in row.index else 1e-05
         BATCH_SIZE = row.params_batch_size 
         LR = row.params_lr
-        SUFFIX = row.params_normalization #"min_max_init_grad"
+        SUFFIX = row.params_scaler_output #"min_max_init_grad"
         activation_name = row.params_activation
     
         if IS_RUN_OPTUNA:
@@ -153,12 +153,23 @@ def main():
         
 
         if "mean" in SUFFIX.lower():
-            scaling = Normalizations.Mean
+            scaling_output = Normalizations.Mean
         elif "min_max" in SUFFIX.lower():
-            scaling = Normalizations.MinMax
+            scaling_output = Normalizations.MinMax
         else:
             raise ValueError("Invalid suffix.")
-        print(f"Selected {scaling}")
+        print(f"Selected {scaling_output}")
+
+        params_scaler_features_str : str = row.params_scaler_features
+        if "mean" in params_scaler_features_str.lower():
+            params_scaler_features = Normalizations.Mean
+        elif "min_max" in params_scaler_features_str.lower():
+            params_scaler_features = Normalizations.MinMax
+        elif "standard" in params_scaler_features_str.lower():
+            params_scaler_features = Normalizations.Standardizer
+        else:
+            raise ValueError("Invalid suffix.")
+        print(f"Selected {params_scaler_features}") 
 
         random.seed(12342)
         n_validation : int = 10
@@ -173,8 +184,8 @@ def main():
             val_param=test_parameters,
             val_snaps=test_snapshots,
             batch_size=BATCH_SIZE,
-            normalizer =scaling,
-            standardizer_features=Normalizations.MinMax
+            normalizer =scaling_output,
+            standardizer_features=params_scaler_features
         )
         
         
@@ -201,7 +212,10 @@ def main():
                         n_outputs,
                         activation=activation_fn,
                         learning_rate=LR,
-                        batch_size=BATCH_SIZE)
+                        batch_size=BATCH_SIZE,
+                        standardizer_features=str(params_scaler_features),
+                        normalizer =str(scaling_output),
+                        )
         
 
         r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,

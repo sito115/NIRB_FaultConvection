@@ -8,6 +8,7 @@ import numpy as np
 import sys 
 import logging
 sys.path.append(str(Path(__file__).parents[1]))
+from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
 from src.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning, Normalizations
 from src.utils import load_pint_data
 
@@ -21,9 +22,9 @@ def objective(trial: optuna.Trial) -> float:
     ]
     hidden6 = trial.suggest_int("hiden6", low = 30,  high = 300 ,step=2)
     
-    suffix = trial.suggest_categorical("scaler_output", ["min_max_init_grad", "mean"])
-    scaler_features = trial.suggest_categorical("scaler_features", ["Standardizer", "Mean", "MinMax"])
-    accuracy = trial.suggest_categorical("accuracy", [1e-5, 1e-6])
+    suffix = trial.suggest_categorical("scaler_output", ["min_max", "mean"])
+    scaler_features = trial.suggest_categorical("scaler_features", ["Standardizer", "Mean", "Min_Max"])
+    accuracy = 1e-5 #trial.suggest_categorical("accuracy", [1e-5, 1e-6])
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 5e-6, 2e-3, log=True)
@@ -44,12 +45,12 @@ def objective(trial: optuna.Trial) -> float:
     if PROJECTION == "Mapped":
         export_root_train = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "Exports"
         export_root_test = ROOT / f"Test{PROJECTION}" / control_mesh_suffix / "Exports"
-        basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+        basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
 
     else:
         export_root_train = ROOT / f"Training{PROJECTION}" 
         export_root_test = ROOT / f"Test{PROJECTION}"
-        basis_func_path = ROOT / "BasisFunctions" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+        basis_func_path = ROOT / f"BasisFunctions{FIELD_NAME}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
 
 
     assert export_root_train.exists(), f"Export root train {export_root_train} does not exist."
@@ -57,17 +58,23 @@ def objective(trial: optuna.Trial) -> float:
     assert basis_func_path.exists(), f"Basis function path {basis_func_path} does not exist."
     basis_functions         = np.load(basis_func_path)
     
-    if 'init' in suffix.lower() and 'grad' in suffix.lower():
-        logging.debug("Entered 'init' and 'grad' condition")
-        training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
-        test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
-    else:
-        logging.debug("Entered else statement condition")
-        training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
-        test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
-    training_snapshots  = training_snapshots_npy[:, -1, :]
-    test_snapshots      = test_snapshots_npy[:, -1, :]
-        
+    match FIELD_NAME:
+        case "Temperature":
+            if 'init' in suffix.lower() and 'grad' in suffix.lower():
+                logging.debug("Entered 'init' and 'grad' condition")
+                training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
+                test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
+            else:
+                logging.debug("Entered else statement condition")
+                training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
+                test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
+            training_snapshots  = training_snapshots_npy[:, -1, :]
+            test_snapshots      = test_snapshots_npy[:, -1, :]
+        case "Entropy":
+            training_snapshots_npy      = np.load(export_root_train / "Training_entropy_gen_per_vol_thermal.npy")
+            test_snapshots_npy          = np.load(export_root_test / "Test_entropy_gen_per_vol_thermal.npy")
+            training_snapshots  = training_snapshots_npy[:, -1, :]
+            test_snapshots      = test_snapshots_npy[:, -1, :]         
         
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
@@ -89,19 +96,19 @@ def objective(trial: optuna.Trial) -> float:
     # Prepare data
 
     if scaler_features.lower() == "standardizer":
-        scaler_features = Normalizations.Standardizer
+        scaler_features = Standardizer()
     elif scaler_features.lower() == "mean":
-        scaler_features = Normalizations.Mean
+        scaler_features = MeanNormalizer()
     elif scaler_features.lower() == "min_max":
-        scaler_features = Normalizations.MinMax
+        scaler_features = MinMaxNormalizer()
     else:
         raise ValueError("Invalid scaler for features.")
 
 
     if "mean" in suffix.lower():
-        scaling_outputs = Normalizations.Mean
+        scaling_outputs = MeanNormalizer()
     elif "min_max" in suffix.lower():
-        scaling_outputs = Normalizations.MinMax
+        scaling_outputs = MinMaxNormalizer()
     else:
         raise ValueError("Invalid suffix.")
 
@@ -125,12 +132,12 @@ def objective(trial: optuna.Trial) -> float:
                        activation=activation_fn,
                        learning_rate=lr,
                        batch_size=batch_size,
-                       scaler_features=scaler_features,
-                       scaler_outputs=scaling_outputs,)
+                       scaler_features=str(scaler_features),
+                       scaler_outputs=str(scaling_outputs))
 
     optuna_pruning = OptunaPruning(
         trial, 
-        monitor="val_loss",        # or "val_loss"
+        monitor="train_loss",        # or "val_loss"
         check_val_every_n_steps=20,
         mode="min",                  # we're minimizing loss
         )
@@ -141,7 +148,7 @@ def objective(trial: optuna.Trial) -> float:
                                       data_module.basis_func_mtrx)
 
     model_ckpt = ModelCheckpoint(
-            monitor = "Q2_val",
+            monitor = "val_loss",
             save_last=True,
             save_top_k=3,
             mode="min",
@@ -149,7 +156,7 @@ def objective(trial: optuna.Trial) -> float:
             every_n_train_steps = 500
         )
 
-    logger_dir_name = "optuna_logs"
+    logger_dir_name = f"optuna_logs{FIELD_NAME}"
     logger = TensorBoardLogger(ROOT, name=logger_dir_name,
                                version=f"trial_{trial.number}",
                                default_hp_metric=False)
@@ -158,7 +165,7 @@ def objective(trial: optuna.Trial) -> float:
                         logger=logger,
                         callbacks=[r2_callback, optuna_pruning, model_ckpt],
                         enable_progress_bar=False,
-                        max_time={"minutes": 70},
+                        max_time={"minutes": 80},
                         )
     
     model.basis_functions = data_module.basis_func_mtrx
@@ -174,26 +181,27 @@ def objective(trial: optuna.Trial) -> float:
     # results = trainer.test(model, dataloaders=data_module.test_dataloader())
     # test_loss = results[0]['test_loss']
     train_loss = model.train_loss
-    trial.set_user_attr("train_loss", float(train_loss))
     # trial.set_user_attr("test_loss", test_loss)
     val_loss = trainer.callback_metrics.get("val_loss")
-    return float(val_loss)
+    trial.set_user_attr("val_loss", float(val_loss))
+    return float(train_loss)
 
 if __name__ == "__main__":
     N_STEPS = 100_000 #100_000 #20_000
     PROJECTION = "Original"  # "Original" or "Mapped"
+    FIELD_NAME = "Entropy"
     control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
     # ACCURACY = 1e-5
     # SUFFIX = "min_max_init_grad"
-    PARAMETER_SPACE = "07"
+    PARAMETER_SPACE = "08"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
-    STUDY_NAME = "sweep"
-    N_JOBS = 4
+    STUDY_NAME = "sweep1"
+    N_JOBS = 2
     N_TRIALS = 150
 
 
     assert ROOT.exists(), f"Not found: {ROOT}"
-    db_path = ROOT / "optuna_db.sqlite3" #/f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
+    db_path = ROOT / f"optuna_db{FIELD_NAME}.sqlite3" #/f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
         "study_name": STUDY_NAME,

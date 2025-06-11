@@ -6,6 +6,7 @@ import pandas as pd
 import pint # noqa: F401
 import sys
 from plotly import graph_objects as go
+from plotly import express as px
 sys.path.append(str(Path(__file__).parents[1]))
 from src.utils import safe_parse_quantity, setup_logger
 from comsol_module.comsol_classes import COMSOL_VTU
@@ -15,8 +16,8 @@ from comsol_module.entropy import caluclate_entropy_gen_number_isotherm
 def main():
 
     ROOT = Path(__file__).parents[1] 
-    PARAMETER_SPACE = "07"
-    DATA_TYPE = "Training"
+    PARAMETER_SPACE = "08"
+    DATA_TYPE = "Test"
 
     import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original"
     assert import_folder.exists(), f"Import folder {import_folder} does not exist."
@@ -32,7 +33,7 @@ def main():
    
     N_TIME_STEPS = len( COMSOL_VTU(comsol_vtu_files[0]).times.keys())
     TIME_STEPS = np.arange(N_TIME_STEPS) 
-    N_CELLS = COMSOL_VTU(comsol_vtu_files[0]).mesh.n_cells
+    N_CELLS = COMSOL_VTU(comsol_vtu_files[0]).mesh.n_points
     entropy_gen_number_therm = np.zeros((N_SNAPS, N_TIME_STEPS))
     entropy_gen_number_visc = np.zeros((N_SNAPS, N_TIME_STEPS))
     entropy_gen_per_vol_thermal = np.zeros((N_SNAPS, N_TIME_STEPS, N_CELLS))
@@ -50,7 +51,7 @@ def main():
         model_dict = {
             'lambda_m' : lambda_therm.magnitude,
             'T0' : t0.magnitude,
-            'mu0': comsol_data.get_array('Dynamic_viscosity', is_cell_data=True)[-1, :],
+            'mu0': comsol_data.get_array('Dynamic_viscosity', is_cell_data=False)[-1, :],
             'k_m': 1.5e-13,
             'delta_T' : delta_T.magnitude,
             'H' : comsol_data.mesh.bounds.z_max - comsol_data.mesh.bounds.z_min,
@@ -58,11 +59,13 @@ def main():
         
         entropy_per_vol = comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
                                                     time_steps=TIME_STEPS,
-                                                    is_return_as_integration=False,)
+                                                    is_return_as_integration=False,
+                                                    is_return_as_cell_data=False)
         
         entropy_gen_per_vol_thermal[idx_snap, :, :] = entropy_per_vol[:, : , 0]  # thermal entropy generation per volume
         entropy_gen_per_vol_visc[idx_snap, :, :] = entropy_per_vol[:, : , 1]
         
+        model_dict['mu0'] = comsol_data.get_array('Dynamic_viscosity', is_cell_data=True)[-1, :]
         entropy_integrated= comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
                                                     time_steps=TIME_STEPS,
                                                     is_return_as_integration=True,)
@@ -89,8 +92,23 @@ def main():
     np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=np.arange(N_SNAPS), y=entropy_gen_number_therm[:, 0], mode='lines+markers', name='Thermal Entropy Generation Number'))
-    fig.add_trace(go.Scatter(x=np.arange(N_SNAPS), y=entropy_gen_number_visc[:, 0], mode='lines+markers', name='Viscous Entropy Generation Number'))
+    colors = px.colors.sample_colorscale("jet", [n/(N_SNAPS) for n in range(N_SNAPS)])
+    for idx in range(N_SNAPS):
+        fig.add_trace(go.Scatter(x=TIME_STEPS,
+                                 y=entropy_gen_number_therm[idx, :],
+                                 line=dict(color=colors[idx]),
+                                 marker_symbol='circle',
+                                 mode='lines+markers',
+                                 name=f'Thermal Entropy Gen Snap {idx}',
+                                showlegend=False))
+        fig.add_trace(go.Scatter(x=TIME_STEPS,
+                                 y=entropy_gen_number_visc[idx, :],
+                                 mode='lines+markers',
+                                line=dict(color=colors[idx], dash ='dash'),
+                                 marker_symbol='square',
+                                 name=f'Viscous Entropy Gen Snap {idx}',
+                                showlegend=False))
+    fig.write_html(ROOT / "data" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_entropy_numbers.html" )
     fig.show()
 
 if __name__ == "__main__":

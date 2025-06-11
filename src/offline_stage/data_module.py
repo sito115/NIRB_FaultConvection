@@ -5,12 +5,6 @@ import torch
 from enum import Enum
 import logging
 
-class Normalizations(Enum):
-    MinMax = MinMaxNormalizer()
-    Mean   = MeanNormalizer()
-    Standardizer = Standardizer() # Z Score
-    NoNormalization = None
-    
 
 class NirbDataModule():
     def __init__(self,
@@ -22,8 +16,8 @@ class NirbDataModule():
                  val_snaps: np.ndarray = None,
                  val_param: np.ndarray = None,
                  batch_size: int = 20,
-                 normalizer : Normalizations = Normalizations.MinMax,
-                 standardizer_features : Normalizations = Normalizations.Standardizer):
+                 normalizer : Normalizer = MinMaxNormalizer(),
+                 standardizer_features : Normalizer = Standardizer()):
         """Data Module for NIRB.
 
         Args:
@@ -47,10 +41,10 @@ class NirbDataModule():
         self.val_param = val_param
         self.batch_size = batch_size 
 
-        self.standardizer = standardizer_features.value
+        self.standardizer = standardizer_features
         self.scale_features()
         
-        self.normalizer = normalizer.value
+        self.normalizer = normalizer
         self.scale_outputs()    
 
         self.compute_coefficients()

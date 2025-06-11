@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Protocol
+import logging
 
 class Normalizer(Protocol):
     def normalize(self, data : np.ndarray) -> np.ndarray:
@@ -35,6 +36,7 @@ class MinMaxNormalizer:
     def inverse_normalize(self, data) -> np.ndarray:
         if self.scaling_params is None:
             raise ValueError("No scaling paramters kept. Consider the flag 'keep_scaling_params'.")
+        logging.debug(f"Inverse mean normalization with {self.scaling_params}")
         return inverse_min_max_scaler(data, **self.scaling_params)
 
 class MeanNormalizer:
@@ -59,6 +61,7 @@ class MeanNormalizer:
     def inverse_normalize(self, data) -> np.ndarray:
         if self.scaling_params is None:
             raise ValueError("No scaling paramters kept. Consider the flag 'keep_scaling_params'.")
+        logging.debug(f"Inverse mean normalization with {self.scaling_params}")
         return inverse_mean_normalization(data, **self.scaling_params)
     
 

@@ -107,7 +107,8 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
                            t0,
                            temp_grad)
     s0_total = np.sum(s0 * ref_mesh.compute_cell_sizes()["Volume"] * ureg.meter**3)
-    L = (ref_mesh.bounds.z_max - ref_mesh.bounds.z_min) * ureg.meter
+    # L = (ref_mesh.bounds.z_max - ref_mesh.bounds.z_min) * ureg.meter
+    L = (ref_mesh.bounds[-1] - ref_mesh.bounds[-2]) * ureg.meter
     s0_characteristic = (lambda_therm * delta_T**2) / (L**2 * t0**2)
     entropy_number = s0_total / s0_characteristic / (ref_mesh.volume * ureg.meter**3)  
     assert entropy_number.check(['dimensionless']) # check for correct unit

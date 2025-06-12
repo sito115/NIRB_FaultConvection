@@ -18,6 +18,7 @@ def main():
     ROOT = Path(__file__).parents[1] 
     PARAMETER_SPACE = "08"
     DATA_TYPE = "Test"
+    IS_EXPORT = False
 
     import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original"
     assert import_folder.exists(), f"Import folder {import_folder} does not exist."
@@ -85,11 +86,11 @@ def main():
                                                             delta_T=model_dict["delta_T"],
                                                             V = comsol_data.mesh.volume,)
 
-
-    np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
-    np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
-    np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_therm.npy", entropy_gen_number_therm)
-    np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
+    if IS_EXPORT:
+        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
+        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
+        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_therm.npy", entropy_gen_number_therm)
+        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
 
     fig = go.Figure()
     colors = px.colors.sample_colorscale("jet", [n/(N_SNAPS) for n in range(N_SNAPS)])
@@ -108,7 +109,8 @@ def main():
                                  marker_symbol='square',
                                  name=f'Viscous Entropy Gen Snap {idx}',
                                 showlegend=False))
-    fig.write_html(ROOT / "data" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_entropy_numbers.html" )
+    if IS_EXPORT:
+        fig.write_html(ROOT / "data" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_entropy_numbers.html" )
     fig.show()
 
 if __name__ == "__main__":

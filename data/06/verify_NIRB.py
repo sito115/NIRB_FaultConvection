@@ -85,9 +85,8 @@ def online_stage(mu_online : np.ndarray, model_ckpt_path : Path, bsf_functions: 
     trained_model.eval()
     print('Predicting the reduced coefficients')
     mu_online_t = torch.from_numpy(mu_online.astype(np.float32)).view(1, -1) # shape [1, n_param]
-    rb_coeff = trained_model(mu_online_t)
-    rb_coeff_np = rb_coeff.detach().numpy()
-    print(rb_coeff)
+    rb_coeff_np = trained_model(mu_online_t).detach().numpy()
+    print(rb_coeff_np)
 
     print('Projecting the reduced solution onto the high-dimensional space')
     full_solution = np.dot(rb_coeff_np.flatten(), bsf_functions)

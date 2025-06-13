@@ -50,7 +50,7 @@ def main():
             'params_accuracy' : 1e-05 ,
             'params_batch_size' : 10,
             'params_lr': 1e-3,
-            'params_scaler_output': 'min_max', ##'min_max_init_grad',
+            'params_scaler_output': 'mean', ##'min_max_init_grad',
             'params_activation': 'sigmoid',
             'params_scaler_features': 'standard',
             'layers' : [15, 15, 15]
@@ -110,8 +110,8 @@ def main():
                         train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / f"Training_{FIELD_NAME}.npy"
                         test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / f"Test_{FIELD_NAME}.npy" 
                 case "EntropyNum":
-                    train_snapshots_path =  ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" /"entropy_gen_number.npy"
-                    test_snapshots_path =  ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_entropy_gen_number.npy"
+                    train_snapshots_path =  ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" /"Training_entropy_gen_number_therm.npy"
+                    test_snapshots_path =  ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_entropy_gen_number_therm.npy"
             
             basis_func_folder = ROOT / "TrainingMapped" / control_mesh_suffix / f"BasisFunctionsPerZeroCrossing{FIELD_NAME}"
             

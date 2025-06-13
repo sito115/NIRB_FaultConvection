@@ -9,7 +9,7 @@ import sys
 import logging
 sys.path.append(str(Path(__file__).parents[1]))
 from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
-from src.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning, Normalizations
+from src.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning
 from src.utils import load_pint_data
 
 def objective(trial: optuna.Trial) -> float:
@@ -22,13 +22,13 @@ def objective(trial: optuna.Trial) -> float:
     ]
     hidden6 = trial.suggest_int("hiden6", low = 30,  high = 300 ,step=2)
     
-    suffix = trial.suggest_categorical("scaler_output", ["min_max", "mean"])
+    suffix = trial.suggest_categorical("scaler_output", ["min_max", "mean", "min_max_init_grad", "mean_init_grad"])
     scaler_features = trial.suggest_categorical("scaler_features", ["Standardizer", "Mean", "Min_Max"])
     accuracy = 1e-5 #trial.suggest_categorical("accuracy", [1e-5, 1e-6])
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 5e-6, 2e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 10, 100)
+    batch_size = trial.suggest_int("batch_size", 10, 150)
 
     activation_name = trial.suggest_categorical("activation", ["sigmoid", "relu", "leaky_relu", "tanh"])
     if activation_name == "leaky_relu":
@@ -129,7 +129,7 @@ def objective(trial: optuna.Trial) -> float:
     model = NirbModule(n_inputs, 
                        [hidden1] + hidden_layers_betw + [hidden6],
                        n_outputs,
-                       activation=activation_fn,
+                       activation=str(activation_fn),
                        learning_rate=lr,
                        batch_size=batch_size,
                        scaler_features=str(scaler_features),
@@ -160,7 +160,7 @@ def objective(trial: optuna.Trial) -> float:
     logger = TensorBoardLogger(ROOT, name=logger_dir_name,
                                version=f"trial_{trial.number}",
                                default_hp_metric=False)
-    trainer = L.Trainer(max_steps=N_STEPS,
+    trainer = L.Trainer(max_epochs=N_STEPS,
                         enable_checkpointing=True,
                         logger=logger,
                         callbacks=[r2_callback, optuna_pruning, model_ckpt],
@@ -189,14 +189,14 @@ def objective(trial: optuna.Trial) -> float:
 if __name__ == "__main__":
     N_STEPS = 100_000 #100_000 #20_000
     PROJECTION = "Original"  # "Original" or "Mapped"
-    FIELD_NAME = "Entropy"
+    FIELD_NAME = "Temperature"
     control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
     # ACCURACY = 1e-5
     # SUFFIX = "min_max_init_grad"
-    PARAMETER_SPACE = "08"
+    PARAMETER_SPACE = "07"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     STUDY_NAME = "sweep1"
-    N_JOBS = 2
+    N_JOBS = 1
     N_TRIALS = 150
 
 

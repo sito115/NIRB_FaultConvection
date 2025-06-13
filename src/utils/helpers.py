@@ -100,13 +100,16 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
         Tuple[pint.Quantity]: (s0_total [W/(K)], entropy_number [-]), Volumetric entropy generation [W/(K*m^3)]
 
     """      
+    ref_mesh.clear_data()
     ref_mesh.point_data["temp_field"] = data
-    cell_mesh = ref_mesh.point_data_to_cell_data()
-    temp_grad = cell_mesh.compute_derivative("temp_field").cell_data["gradient"] * ureg.kelvin / ureg.meter
+    ref_mesh = ref_mesh.clean(progress_bar = True)
+    temp_grad = ref_mesh.compute_derivative("temp_field", preference = "point").point_data["gradient"] * ureg.kelvin / ureg.meter
     s0 = calculate_S_therm(lambda_therm,
                            t0,
                            temp_grad)
-    s0_total = np.sum(s0 * ref_mesh.compute_cell_sizes()["Volume"] * ureg.meter**3)
+    ref_mesh.point_data["temp_field"] = s0.magnitude 
+    integrated = ref_mesh.integrate_data()
+    s0_total = integrated.point_data['temp_field'][0] * ureg.watt / ureg.kelvin
     # L = (ref_mesh.bounds.z_max - ref_mesh.bounds.z_min) * ureg.meter
     L = (ref_mesh.bounds[-1] - ref_mesh.bounds[-2]) * ureg.meter
     s0_characteristic = (lambda_therm * delta_T**2) / (L**2 * t0**2)

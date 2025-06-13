@@ -18,7 +18,7 @@ def main():
     ROOT = Path(__file__).parents[1] 
     PARAMETER_SPACE = "08"
     DATA_TYPE = "Test"
-    IS_EXPORT = False
+    IS_EXPORT = True
 
     import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original"
     assert import_folder.exists(), f"Import folder {import_folder} does not exist."
@@ -60,13 +60,11 @@ def main():
         
         entropy_per_vol = comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
                                                     time_steps=TIME_STEPS,
-                                                    is_return_as_integration=False,
-                                                    is_return_as_cell_data=False)
+                                                    is_return_as_integration=False)
         
         entropy_gen_per_vol_thermal[idx_snap, :, :] = entropy_per_vol[:, : , 0]  # thermal entropy generation per volume
         entropy_gen_per_vol_visc[idx_snap, :, :] = entropy_per_vol[:, : , 1]
         
-        model_dict['mu0'] = comsol_data.get_array('Dynamic_viscosity', is_cell_data=True)[-1, :]
         entropy_integrated= comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
                                                     time_steps=TIME_STEPS,
                                                     is_return_as_integration=True,)
@@ -87,10 +85,10 @@ def main():
                                                             V = comsol_data.mesh.volume,)
 
     if IS_EXPORT:
-        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
-        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
-        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_therm.npy", entropy_gen_number_therm)
-        np.save(ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original" /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
+        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
+        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
+        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_number_therm.npy", entropy_gen_number_therm)
+        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
 
     fig = go.Figure()
     colors = px.colors.sample_colorscale("jet", [n/(N_SNAPS) for n in range(N_SNAPS)])

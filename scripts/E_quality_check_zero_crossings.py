@@ -10,9 +10,8 @@ import logging
 from tqdm import tqdm
 from datetime import datetime
 sys.path.append(str(Path(__file__).parents[1]))
-from src.offline_stage import NirbModule,  get_n_outputs, Normalizations
+from src.offline_stage import NirbModule,  get_n_outputs
 from src.pod import MinMaxNormalizer, MeanNormalizer, Standardizer, Normalizer
-import src.offline_stage 
 from comsol_module import COMSOL_VTU
 from src.utils import (load_pint_data,
                        setup_logger,
@@ -25,11 +24,9 @@ torch.serialization.add_safe_globals([torch.nn.modules.activation.Tanh,
                                         torch.nn.modules.activation.Sigmoid,
                                         torch.nn.modules.activation.LeakyReLU,
                                         torch.nn.modules.activation.ReLU,
-                                        Normalizations,
                                         MinMaxNormalizer,
                                         MeanNormalizer,
                                         Normalizer,
-                                        src.offline_stage.data_module.Normalizations,
                                         np.dtypes.Float64DType,
                                         np.float64,
                                         np.int64,
@@ -38,17 +35,17 @@ torch.serialization.add_safe_globals([torch.nn.modules.activation.Tanh,
                                         Standardizer])
 
 def main():
-    PARAMETER_SPACE = "07"
+    PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
     cutoff_datetime = datetime(2025, 6, 5, 15, 0, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
-    FIELD_NAME = "Temperature"
+    FIELD_NAME = "EntropyNum" # Temperature
     IS_OVERWRITE = True
-    PROJECTION = "Original"  # "Mapped" or "Original"
+    PROJECTION = "Mapped"  # "Mapped" or "Original"
     BASIS_FTS_FOLDER_NAME = f"BasisFunctionsPerZeroCrossing{FIELD_NAME}"  # "BasisFunctions" or "BasisFunctionsPerZeroCrossing"
-    control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_0"
+    control_mesh_suffix = "s100_100_100_b0_4000_0_5000_-4000_0"
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if (path.stat().st_mtime > cutoff_datetime and "zc" in str(path))])
     if FIELD_NAME == "Temperature":
@@ -56,7 +53,8 @@ def main():
     else:
         chk_pt_paths = [s for s in chk_pt_paths if FIELD_NAME.lower() in str(s).lower()]
     
-    basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / BASIS_FTS_FOLDER_NAME if control_mesh_suffix else ROOT / BASIS_FTS_FOLDER_NAME
+    basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / BASIS_FTS_FOLDER_NAME if PROJECTION == 'Mapped' else ROOT / BASIS_FTS_FOLDER_NAME
+    assert basis_functions_folder.exists()    
         
     df_basis_functions = pd.DataFrame([
         {'path': str(p), 'shape': m.shape, 'n_basis': m.shape[0], 'n_points': m.shape[1] if m.ndim > 1 else 1}
@@ -86,7 +84,7 @@ def main():
     grouped_zc_train = {int(val): np.where(zero_crossings_train == val)[0] for val in unique_zc }
     grouped_zc_test = {int(val): np.where(zero_crossings_test == val)[0] for val in unique_zc}
 
-    if control_mesh_suffix is not None:
+    if PROJECTION == "Mapped":
         comsol_data = COMSOL_VTU(ROOT / f"Training{PROJECTION}" / control_mesh_suffix /f"Training_000_{control_mesh_suffix}.vtu")
     else:
         comsol_data = COMSOL_VTU(ROOT / "TrainingOriginal" / "Training_000.vtu")
@@ -221,21 +219,21 @@ def main():
                 if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
                     training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
                     test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
-                    training_snapshots  = training_snapshots_npy[:, -1, :]
-                    test_snapshots      = test_snapshots_npy[:, -1, :]
                     logging.info(f"Using snapshots with tgrad for {SUFFIX=}")
 
                 else:
                     training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
                     test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
-                    training_snapshots  = training_snapshots_npy[:, -1, :]
-                    test_snapshots      = test_snapshots_npy[:, -1, :]
                     logging.info(f"Using snapshots without tgrad for {SUFFIX=}")
+                    
+                training_snapshots  = training_snapshots_npy[:, -1, :]
+                test_snapshots      = test_snapshots_npy[:, -1, :]
+                
             case "EntropyNum":
-                    training_snapshots_npy =  np.load(ROOT / "TrainingOriginal" / "Training_entropy_gen_number_therm.npy")
-                    test_snapshots_npy =  np.load(ROOT / "TestOriginal" / "Test_entropy_gen_number_therm.npy")
-                    training_snapshots = training_snapshots_npy[:, -1:]
-                    test_snapshots  = test_snapshots_npy[:, -1:]
+                training_snapshots_npy =  np.load(export_root_train / "Training_entropy_gen_number_therm.npy")
+                test_snapshots_npy =  np.load(export_root_test/ "Test_entropy_gen_number_therm.npy")
+                training_snapshots = training_snapshots_npy[:, -1:]
+                test_snapshots  = test_snapshots_npy[:, -1:]
 
         if "mean" in SUFFIX.lower():
             scaling_output = MeanNormalizer()
@@ -243,6 +241,7 @@ def main():
             scaling_output = MinMaxNormalizer()
         else:
             raise ValueError("Invalid suffix.")
+        
         training_snapshots_scaled = scaling_output.normalize(training_snapshots)
         test_snapshots_scaled = scaling_output.normalize_reuse_param(test_snapshots)
 
@@ -285,8 +284,7 @@ def main():
             delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
             param = test_parameters_scaled[sample_idx]
             param_t = torch.from_numpy(param.astype(np.float32)).view(1, -1) # shape [1, n_param]
-            res = trained_model(param_t)
-            res_np = res.detach().numpy()
+            res_np = trained_model(param_t).detach().numpy()
             my_sol_scaled = np.matmul(res_np.flatten(), basis_functions)
             predictions_scaled[idx, :] = my_sol_scaled
             
@@ -340,8 +338,7 @@ def main():
             delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
             param = training_parameters_scaled[sample_idx]
             param_t = torch.from_numpy(param.astype(np.float32)).view(1, -1) # shape [1, n_param]
-            res = trained_model(param_t)
-            res_np = res.detach().numpy()
+            res_np = trained_model(param_t).detach().numpy()
             my_sol_scaled = np.matmul(res_np.flatten(), basis_functions)
             predictions_scaled[idx, :] = my_sol_scaled
             

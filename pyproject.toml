@@ -19,6 +19,7 @@ dependencies = [
     "salib",
     "comsol_module",
     "mph",
+    "torch>=2.7.1",
 ]
 
 [project.optional-dependencies]

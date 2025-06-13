@@ -102,7 +102,7 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
     """      
     ref_mesh.clear_data()
     ref_mesh.point_data["temp_field"] = data
-    ref_mesh = ref_mesh.clean(progress_bar = True)
+    ref_mesh = ref_mesh.clean(progress_bar = False)
     temp_grad = ref_mesh.compute_derivative("temp_field", preference = "point").point_data["gradient"] * ureg.kelvin / ureg.meter
     s0 = calculate_S_therm(lambda_therm,
                            t0,

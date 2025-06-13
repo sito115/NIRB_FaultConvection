@@ -9,7 +9,7 @@ import logging
 from tqdm import tqdm
 import plotly.graph_objects as go
 sys.path.append(str(Path(__file__).parents[1]))
-from src.offline_stage import NirbModule,  get_n_outputs, Normalizations
+from src.offline_stage import NirbModule,  get_n_outputs
 from src.pod import MinMaxNormalizer, MeanNormalizer, Standardizer, Normalizer
 from comsol_module import COMSOL_VTU
 from src.utils import (load_pint_data,
@@ -21,15 +21,16 @@ from src.utils import (load_pint_data,
 
 
 def main():
-    PARAMETER_SPACE = "07"
+    PARAMETER_SPACE = "01"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
-    FIELD_NAME = "Temperature"
+    FIELD_NAME = "EntropyNum" #Temperature
     IS_OVERWRITE = True
-    PROJECTION = "Original"  # "Mapped" or "Original"
-    control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_0"
+    PROJECTION = "Mapped"  # "Mapped" or "Original"
+    control_mesh_suffix = "s100_100_100_b0_4000_0_5000_-4000_0"
+    col_index = 1
 
     df_basis_functions = pd.read_csv(ROOT / f"df_basis_functions_{FIELD_NAME}_zc.csv")
     conn = sqlite3.connect(ROOT / f"results_all_zero_crossing{FIELD_NAME}.db") 
@@ -38,7 +39,7 @@ def main():
     df_quality_checks['mean_metric'] = df_quality_checks[['Q2_unscaled', 'R2_unscaled']].mean(axis=1)
     df_quality_checks_grouped = df_quality_checks.groupby(by = "zc")
 
-    if control_mesh_suffix is not None:
+    if PROJECTION == "Mapped":
         comsol_data = COMSOL_VTU(ROOT / f"Training{PROJECTION}" / control_mesh_suffix /f"Training_000_{control_mesh_suffix}.vtu")
     else:
         comsol_data = COMSOL_VTU(ROOT / "TrainingOriginal" / "Training_000.vtu")
@@ -51,7 +52,14 @@ def main():
 
     for group_name, group_df in tqdm(df_quality_checks_grouped, total = len(df_quality_checks_grouped)):
         zc = int(group_name)
-        group_df_sorted = group_df.sort_values(by = 'mean_metric')
+        group_df_sorted = group_df.loc[group_df['R2_scaled'] < group_df['Q2_scaled'], :]
+        if len(group_df_sorted) < 1:
+            group_df_sorted = group_df
+        group_df_sorted = group_df_sorted.loc[group_df_sorted['Epoch'] > 1000, :]
+        if len(group_df_sorted) < 1:
+            group_df_sorted = group_df
+        
+        group_df_sorted = group_df_sorted.sort_values(by = 'mean_metric')
         row = group_df_sorted.iloc[0]
         if "temperature" in FIELD_NAME.lower():
             assert row['Entropy_R2_test'] > 0
@@ -60,7 +68,7 @@ def main():
             logging.info(f'\t {col} - {row[col]}')
         chk_pt_path = group_df_sorted.iloc[0]['Path']
         scaler_features = group_df_sorted.iloc[0]['scaler_features']
-        scaler_output   = group_df_sorted.iloc[0]['scaler_output']
+        # scaler_output   = group_df_sorted.iloc[0]['scaler_output']
         suffix          = group_df_sorted.iloc[0]['norm']
         accuracy        = group_df_sorted.iloc[0]['Accuracy']
 
@@ -78,6 +86,8 @@ def main():
         test_parameters             = load_pint_data(ROOT / "test_samples.csv", is_numpy = True)
         training_parameters_pint = load_pint_data(ROOT / "training_samples.csv")
         test_parameters_pint = load_pint_data(ROOT / "test_samples.csv")
+        
+        assert col_index <= len(training_parameters_pint.columns) - 1
         
         zero_crossings_train = np.load(ROOT / "Exports" / "Training_zero_crossings.npy")
         zero_crossings_test = np.load(ROOT / "Exports" / "Test_zero_crossings.npy")
@@ -115,8 +125,8 @@ def main():
                     test_snapshots      = test_snapshots_npy[:, -1, :]
                     logging.info(f"Using snapshots without tgrad for {suffix=}")
             case "EntropyNum":
-                training_snapshots_npy =  np.load(ROOT / "TrainingOriginal" / "Training_entropy_gen_number_therm.npy")
-                test_snapshots_npy =  np.load(ROOT / "TestOriginal" / "Test_entropy_gen_number_therm.npy")
+                training_snapshots_npy =  np.load(export_root_train / "Training_entropy_gen_number_therm.npy")
+                test_snapshots_npy =  np.load(export_root_test / "Test_entropy_gen_number_therm.npy")
                 training_snapshots = training_snapshots_npy[:, -1:]
                 test_snapshots  = test_snapshots_npy[:, -1:]
 
@@ -126,9 +136,10 @@ def main():
             scaling_output = MinMaxNormalizer()
         else:
             raise ValueError("Invalid suffix.")
-        
+        # DO not delete, because of reuse scaling parameters
         training_snapshots_scaled = scaling_output.normalize(training_snapshots)
         test_snapshots_scaled = scaling_output.normalize_reuse_param(test_snapshots)
+
 
         if  "standard" in scaler_features.lower():
             scaling_features = Standardizer()
@@ -142,8 +153,17 @@ def main():
         training_parameters_scaled = scaling_features.normalize(training_parameters)
         test_parameters_scaled = scaling_features.normalize_reuse_param(test_parameters)
 
-        entrpy_nums_prediction = np.zeros((len(test_parameters_scaled)))
-        for idx, test_param_scaled in enumerate(test_parameters_scaled):
+        training_idx_zc = np.append(np.where(zero_crossings_train == 0), np.where(zero_crossings_train == zc))
+        test_idx_zc = np.append(np.where(zero_crossings_test == 0), np.where(zero_crossings_test == zc))
+        training_snapshots_per_zc = training_snapshots[training_idx_zc, :]
+        test_snapshots_per_zc = test_snapshots[test_idx_zc]
+        training_parameters_per_zc = training_parameters[training_idx_zc, :]
+        test_parameters_per_zc = test_parameters[test_idx_zc]
+
+
+        entrpy_nums_prediction = np.zeros((len(test_idx_zc)))
+        for idx, idx_test in enumerate(test_idx_zc):
+            test_param_scaled = test_parameters_scaled[idx_test]
             parameters_df_file = param_files_test[idx]
             param_df = pd.read_csv(parameters_df_file, index_col = 0)
             param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
@@ -153,8 +173,7 @@ def main():
             delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
             param = test_param_scaled
             param_t = torch.from_numpy(param.astype(np.float32)).view(1, -1) # shape [1, n_param]
-            res = trained_model(param_t)
-            res_np = res.detach().numpy()
+            res_np = trained_model(param_t).detach().numpy()
             my_sol_scaled = np.matmul(res_np.flatten(), basis_functions)
 
             if 'init' in suffix.lower() and 'grad' in suffix.lower():
@@ -173,18 +192,19 @@ def main():
                                                                                 lambda_therm, t0, delta_T)
                 entrpy_nums_prediction[idx] = entrpy_num_prediction.magnitude
             else:
-                entrpy_nums_prediction[idx] = prediction_unscaled
+                entrpy_nums_prediction[idx] = prediction_unscaled.flatten()[0]
         
         custom_data_test = np.column_stack([
-        np.arange(len(test_parameters)),
-        np.array([zc] * len(test_parameters))
+        test_idx_zc,
+        np.array([zc] * len(test_idx_zc))
     ])
         
         fig.add_trace(go.Scatter(
-            x=test_parameters.flatten(),
+            x=test_parameters[test_idx_zc, col_index].flatten(),
             y=entrpy_nums_prediction.flatten(),
             mode='markers',
-            name = f'Test Samples zc {zc}',
+            name = f'Predicted Test Samples zc {zc}',
+            marker_symbol = 'cross',
             visible="legendonly",
             marker=dict(
                 size=8,
@@ -202,7 +222,7 @@ def main():
             customdata=custom_data_test,
             hovertemplate=(
                 'Test Idx: %{customdata[0]:03d}<br>' +
-                f'{training_parameters_pint.columns[0]}: %{{x:.2f}}<br>' +
+                f'{training_parameters_pint.columns[col_index]}: %{{x:.2}}<br>' +
                 'Entropy Number: %{y:.2f}<br>' +
                 'zero_crossings: %{customdata[1]:d}<extra></extra>'
             )
@@ -219,8 +239,7 @@ def main():
                     delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
                     param = train_param_scaled
                     param_t = torch.from_numpy(param.astype(np.float32)).view(1, -1) # shape [1, n_param]
-                    res = trained_model(param_t)
-                    res_np = res.detach().numpy()
+                    res_np = trained_model(param_t).detach().numpy()
                     my_sol_scaled = np.matmul(res_np.flatten(), basis_functions)
 
                     if 'init' in suffix.lower() and 'grad' in suffix.lower():
@@ -239,18 +258,18 @@ def main():
                                                                                         lambda_therm, t0, delta_T)
                         entrpy_nums_prediction[idx] = entrpy_num_prediction.magnitude
                     else:
-                        entrpy_nums_prediction[idx] = prediction_unscaled
+                        entrpy_nums_prediction[idx] = prediction_unscaled.flatten()[0]
 
-        custom_data_test = np.column_stack([
+        custom_data_train = np.column_stack([
         np.arange(len(training_parameters)),
         np.array([zc] * len(training_parameters))
         ])
 
         fig.add_trace(go.Scatter(
-            x=training_parameters.flatten(),
+            x=training_parameters[:, col_index].flatten(),
             y=entrpy_nums_prediction.flatten(),
             mode='markers',
-            name = f'Train Samples zc {zc}',
+            name = f'Predicted Train Samples zc {zc}',
             marker=dict(
                 size=8,
                 color=np.ones((len(training_parameters), )) * zc,  # face color = scalar value
@@ -264,11 +283,11 @@ def main():
                 opacity=0.9,
                 showscale=False
             ),
-            customdata=custom_data_test,
+            customdata=custom_data_train,
             showlegend=True,
             hovertemplate=(
                 'Train Idx: %{customdata[0]:03d}<br>' +
-                f'{training_parameters_pint.columns[0]}: %{{x:.2f}}<br>' +
+                f'{training_parameters_pint.columns[col_index]}: %{{x:.2}}<br>' +
                 'Entropy Number: %{y:.2f}<br>' +
                 'zero_crossings: %{customdata[1]:d}<extra></extra>'
             )
@@ -276,21 +295,91 @@ def main():
 
 
 
+        custom_data_train = np.column_stack([
+        training_idx_zc,
+        zero_crossings_train[training_idx_zc]
+        ])
+
+        fig.add_trace(go.Scatter(
+            x=training_parameters_per_zc[:, col_index].flatten(),
+            y=training_snapshots_per_zc.flatten(),
+            mode='markers',
+            name = f'Training Samples zc {zc}',
+            visible="legendonly",
+            marker_symbol = "square",
+            marker=dict(
+                size=8,
+                color=zero_crossings_train[training_idx_zc],  # face color = scalar value
+                colorscale=cmap,
+                cmin=vmin,
+                cmax=vmax,
+                line=dict(
+                    color='black',  # solid edge
+                    width=1
+                ),
+                opacity=0.9,
+                showscale=False
+            ),
+            customdata=custom_data_train,
+            hovertemplate=(
+                'Train Idx: %{customdata[0]:03d}<br>' +
+                f'{training_parameters_pint.columns[col_index]}: %{{x:.2}}<br>' +
+                'Entropy Number: %{y:.2f}<br>' +
+                'zero_crossings: %{customdata[1]:d}<extra></extra>'
+            )
+        ))
+
+    
+        custom_data_test = np.column_stack([
+                    test_idx_zc,
+                    zero_crossings_test[test_idx_zc]
+                    ])
+
+        fig.add_trace(go.Scatter(
+                x=test_parameters_per_zc[:, col_index].flatten(),
+                y=test_snapshots_per_zc.flatten(),
+                mode='markers',
+                name = f'Test Samples zc {zc}',
+                visible="legendonly",
+                marker_symbol = "diamond",
+                marker=dict(
+                    size=8,
+                    color=zero_crossings_test[test_idx_zc],  # face color = scalar value
+                    colorscale=cmap,
+                    cmin=vmin,
+                    cmax=vmax,
+                    line=dict(
+                        color='black',  # solid edge
+                        width=1
+                    ),
+                    opacity=0.9,
+                    showscale=False
+                ),
+                customdata=custom_data_test,
+                hovertemplate=(
+                    'Train Idx: %{customdata[0]:03d}<br>' +
+                    f'{training_parameters_pint.columns[col_index]}: %{{x:.2}}<br>' +
+                    'Entropy Number: %{y:.2f}<br>' +
+                    'zero_crossings: %{customdata[1]:d}<extra></extra>'
+                )
+            ))
+
+
     fig.update_layout(
-        title=f'Parameter Space {PARAMETER_SPACE} - Number of Convection Cells',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.5,
-            xanchor="left",
-            x=0,
-            traceorder="normal",
-            itemwidth=70  # control spacing
+            title=f'Parameter Space {PARAMETER_SPACE} - Number of Convection Cells',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.5,
+                xanchor="left",
+                x=0,
+                traceorder="normal",
+                itemwidth=70  # control spacing
+            )
         )
-    )
 
     fig.show()
-    fig.write_html(ROOT / "Exports" / f"Zero_Crossing_{PARAMETER_SPACE}_{FIELD_NAME}_Test_QC.html")
+    fig.write_html(ROOT / "Exports" / f"Zero_Crossing_{PARAMETER_SPACE}_{FIELD_NAME}_{training_parameters_pint.columns[col_index]}_Test_QC.html")
 
 
 

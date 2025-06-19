@@ -8,11 +8,12 @@ from comsol_module.comsol_classes import COMSOL_VTU
 
 
 ROOT = Path().cwd()
-PARAMETER_SPACE = "07"
+PARAMETER_SPACE = "09"
 FIELD_NAME = "Temperature"
 DATA_TYPE = "Test"
 IS_LOAD_NPY : bool = True
-control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_-0"
+spacing = 50
+control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
 
 if control_mesh_suffix is None:
     import_folder = ROOT / "data" / PARAMETER_SPACE / (DATA_TYPE + "Original")
@@ -21,7 +22,7 @@ if control_mesh_suffix is None:
 else:
     import_folder = ROOT / "data" / PARAMETER_SPACE / (DATA_TYPE + "Mapped") / control_mesh_suffix / "Exports"
     assert import_folder.exists()
-    comsol_data = COMSOL_VTU(import_folder.parent / f"{DATA_TYPE}_000_{control_mesh_suffix}.vtu")
+    comsol_data = COMSOL_VTU(import_folder.parent / f"{DATA_TYPE}_000_{control_mesh_suffix}.vtk", is_clean_mesh=False)
 
 export_folder = ROOT / "data" / PARAMETER_SPACE / "Exports" / "Zero-Crossings"
 export_folder.mkdir(exist_ok=True)

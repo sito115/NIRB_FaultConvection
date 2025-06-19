@@ -23,31 +23,33 @@ def main():
     """Extract "EXPORT_FIELD" from  multiple vtu-Files and save it as npy-File.
     Optionally create mp4 movies of simulations. 
     """    
-    IS_EXPORT_MP4 = False           # Export MP4 movies
-    EXPORT_FIELD = "Total_Darcy_velocity_magnitude"   # Which field to save 
+    IS_EXPORT_MP4 = True           # Export MP4 movies
+    EXPORT_FIELD = "Temperature" #"Total_Darcy_velocity_magnitude"   # Which field to save 
     IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
     IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "07"
+    PARAMETER_SPACE = "09"
     DATA_TYPE = "Training"
-    # data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  "TestMapped" / "s100_100_100_b0_4000_0_5000_-4000_-0") # data_type) #"Truncated") # data_type)
-    # data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Mapped" / "s100_100_100_b0_4000_0_5000_-4000_0"
-    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original"
-    
-    assert DATA_TYPE.lower() in str(data_folder).lower()
-    assert data_folder.exists(), f"Data folder {data_folder} does not exist."
-    # export_folder = data_folder.joinpath("Exports") # ROOT / "data" / PARAMETER_SPACE / "TrainingMapped" 
-    # export_folder = data_folder / "Exports"
-    # export_folder.mkdir(exist_ok=True)
+    PROJECTION = "Mapped" #"Mapped"
+
+    data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}{PROJECTION}"
     export_folder = Path().cwd() / f"data/{PARAMETER_SPACE}/Exports"
-    assert export_folder.exists(), f"Export folder {export_folder} does not exist."
-    vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti"] and DATA_TYPE.lower() in path.stem.lower())])
-    assert len(vtu_files) > 0
-    N_SNAPS = len(vtu_files)
-    # N_SNAPS = 300
+    if PROJECTION == "Mapped":
+        spacing = 50
+        control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
+        data_folder = data_folder / control_mesh_suffix
+        export_folder = data_folder / "Exports"
+        export_folder.mkdir(exist_ok=True)
     
+    assert data_folder.exists(), f"Data folder {data_folder} does not exist."
+    assert export_folder.exists(), f"Export folder {export_folder} does not exist."
+    vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti", ".vtk"] and DATA_TYPE.lower() in path.stem.lower())])
+    assert len(vtu_files) > 0
+    is_clean_mesh = not(any(path.suffix == ".vtk" for path in vtu_files))
+    N_SNAPS = len(vtu_files)
+
     parameter_file = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv"
     assert parameter_file.exists()
     pint_parameters_df = load_pint_data(parameter_file)
@@ -56,8 +58,10 @@ def main():
     
     # extract time steps and points from first simulation
     sim_times = np.zeros((N_SNAPS, ))
-    N_POINTS          = COMSOL_VTU(vtu_files[0]).mesh.points.shape[0]
-    N_TIME_STEPS      = len(COMSOL_VTU(vtu_files[0]).times)
+    reference_comsol_mesh = COMSOL_VTU(vtu_files[0], is_clean_mesh=is_clean_mesh)
+    N_POINTS          = reference_comsol_mesh.mesh.points.shape[0]
+    N_TIME_STEPS      = len(reference_comsol_mesh.times)
+    del reference_comsol_mesh
         
     if IS_EXPORT_NPY:
         export_array      = np.zeros((N_SNAPS, N_TIME_STEPS, N_POINTS))
@@ -68,7 +72,7 @@ def main():
     
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         idx = int(vtu_file.stem.split("_")[1])
-        comsol_data = COMSOL_VTU(vtu_file)
+        comsol_data = COMSOL_VTU(vtu_file, is_clean_mesh=is_clean_mesh)
         sim_time = comsol_data.mesh.field_data['SimTime'][0]
         sim_times[idx] = sim_time
         parameters = comsol_data.mesh.field_data['Parameters']
@@ -82,12 +86,13 @@ def main():
         t_grad = (t_h - t_c) / parameters_pint['H'].to('m').magnitude
         
         ### Check that Parameters in field data are equal to parameters stored in data frame
+        print(f"{DATA_TYPE} {idx:03d}")
         for free_parameter in free_parameter_names:
             field_value = parameters_pint[free_parameter]
             df_value = pint_parameters_df.loc[idx, free_parameter]
             assert field_value.units == df_value.units, f"Unit mismatch: {field_value.units} vs {df_value.units}"    
             assert np.isclose( field_value.magnitude, df_value.magnitude, rtol=1e-10)
-            print(f"Parameter {free_parameter} is equal in field data and unit: {field_value} vs {df_value}")
+            print(f"\tParameter {free_parameter} is equal in mesh field data and samples.csv: {field_value} vs {df_value}")
             
         if IS_EXPORT_MP4:
             dip = parameters_pint['dip'].to('degree').magnitude

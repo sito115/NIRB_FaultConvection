@@ -4,7 +4,9 @@ from .helpers import (
     plot_data,
     calculate_thermal_entropy_generation,
     setup_logger,
-    format_comsol_unit
+    format_comsol_unit,
+    find_snapshot_path,
+    find_basis_functions
 )
 
 from .pint_units import(

@@ -34,12 +34,12 @@ def handle_invalid_point_mask(target_point: np.ndarray,
 
 def main():   
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "01"
-    DATA_TYPE = "Test"
+    PARAMETER_SPACE = "09"
+    DATA_TYPE = "Training"
     FIELD_TO_EXPORT : str = "Temperature"
-    SPACING = (100, 100, 100) # dx, dy, dz
+    SPACING = (50, 50, 50) # dx, dy, dz
     DECIMAL_TOLERANCE =  1 # for assertation of min max values afterwards
-    
+    FILE_SUFFIX = 'vtk'
 
     data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original") # data_type) #"Truncated") # data_type)    
     assert data_folder.exists(), f"Data folder {data_folder} does not exist."
@@ -53,24 +53,22 @@ def main():
     vtu_files = sorted([path for path in data_folder.iterdir() if path.suffix == ".vtu"])
     
     # FOR PS 01
-    original_mesh_path = Path("/Users/thomassimader/Documents/NIRB/data/01/TrainingOriginal/Training_100.vtu")
-    original_comsol_bounds = COMSOL_VTU(original_mesh_path).mesh.bounds
-    control_mesh = COMSOL_VTU(original_mesh_path).mesh
-    control_mesh.clear_data()
+    # original_mesh_path = Path("/Users/thomassimader/Documents/NIRB/data/01/TrainingOriginal/Training_100.vtu")
+    # original_comsol_bounds = COMSOL_VTU(original_mesh_path).mesh.bounds
+    # control_mesh = COMSOL_VTU(original_mesh_path).mesh
+    # control_mesh.clear_data()
     
-    # original_comsol_bounds = COMSOL_VTU(vtu_files[0]).mesh.bounds
-    # logging.debug(f"{original_comsol_bounds=}")
-    # control_mesh = create_control_mesh(original_comsol_bounds,
-    #                                    SPACING)
+    original_comsol_bounds = COMSOL_VTU(vtu_files[0]).mesh.bounds
+    logging.debug(f"{original_comsol_bounds=}")
+    original_comsol_bounds = np.trunc(original_comsol_bounds)
+    logging.debug(f"after truncation: {original_comsol_bounds=}")
+    control_mesh = create_control_mesh(original_comsol_bounds,
+                                       SPACING)
 
     setup_logger(is_console=True)
-    # Clip bounds of control mesh to avoid interpolation errors
-    logging.debug(f"Old bounds of control mesh: {control_mesh.bounds}")
-    logging.debug(f"Old n_points of control mesh: {control_mesh.n_points}")
     # bbox = pv.Box(np.trunc(original_comsol_bounds)) # converts image data to unstructered grid
     # control_mesh = control_mesh.clip_box(bbox, invert=False)
-    logging.debug(f"New bounds of control mesh after clipping: {control_mesh.bounds}")
-    logging.debug(f"New n_points of control mesh after clipping: {control_mesh.n_points}")
+    # FILE_SUFFIX = "vtu"
     
     # create export folder with spacing and bounds information
     spacing_str = '_'.join(f"{x:.0f}" for x in SPACING)
@@ -85,8 +83,10 @@ def main():
         
         # Delete fields of no interest to reduce file size after interpolation
         comsol_data = delete_comsol_fields(comsol_data, [FIELD_TO_EXPORT])
-        # for i in range(len(comsol_data.times) - 1): # delete every time step except last one (-1)
-        #     comsol_data.mesh.point_data.remove(comsol_data.format_field(FIELD_TO_EXPORT, i))
+        
+        for i in range(len(comsol_data.times) - 1): # delete every time step except last one (-1)
+            comsol_data.mesh.point_data.remove(comsol_data.format_field(FIELD_TO_EXPORT, i))
+            
         mapped : pv.ImageData = map_on_control_mesh(comsol_data.mesh, control_mesh)
         
         validity_array = mapped.point_data['vtkValidPointMask']  
@@ -115,10 +115,10 @@ def main():
         # Transfer meta data (Parameters, Idx, SimTime)
         for key, value in comsol_data.mesh.field_data.items(): 
             mapped.field_data[key] = value
-        mapped.save(export_folder / f"{vtu_path.stem}_s{spacing_str}_b{bounds_str}.vtu") # VTK ImageData (best for structured image data)
+        mapped.save(export_folder / f"{vtu_path.stem}_s{spacing_str}_b{bounds_str}.{FILE_SUFFIX}") # VTK ImageData (best for structured image data)
     
     
-    total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".vtu")  / (1024 * 1024)
+    total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == f".{FILE_SUFFIX}")  / (1024 * 1024)
     logging.info(f"Total size of all mapped .vtu files: {total_size} MB")
 
 if __name__ == "__main__":

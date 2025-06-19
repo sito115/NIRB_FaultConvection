@@ -4,6 +4,7 @@ import pandas as pd
 import pint_pandas 
 import pint
 import numpy as np
+from typing import Union
 
 # Patch missing unit BEFORE using .quantify
 ureg = pint.UnitRegistry()
@@ -18,7 +19,7 @@ pint_pandas.PintType.ureg = ureg
 pint.set_application_registry(ureg)
 
 
-def load_pint_data(path: Path, is_numpy = False, **kwargs) -> pd.DataFrame:
+def load_pint_data(path: Path, is_numpy = False, **kwargs) -> Union[pd.DataFrame, np.ndarray]:
     """Load csv that has parameter names in the first row and units in the second row.
 
     Args:

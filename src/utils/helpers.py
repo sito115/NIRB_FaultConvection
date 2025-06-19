@@ -3,15 +3,15 @@ from sklearn.metrics import mean_squared_error
 from matplotlib import pyplot as plt
 from pathlib import Path
 import pint
-from src.comsol_module.src.comsol_module import calculate_S_therm
+from src.comsol_module.src.comsol_module import calculate_S_therm, caluclate_entropy_gen_number_isotherm
 import pyvista as pv
-from typing import Tuple
+from typing import Tuple, Literal, Any
 import logging
 import pandas as pd
 
 ureg = pint.get_application_registry()
 
-def mse(predictions :np.ndarray , targets: np.ndarray) -> float:
+def mse(predictions :np.ndarray , targets: np.ndarray) -> np.floating[Any]:
     """Compute the Mean Squared Error (MSE) between predictions and targets.
 
     Args:
@@ -64,7 +64,7 @@ def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> floa
     Q2 = mean_squared_error(test_snapshots, test_predictions, multioutput='raw_values')  
     # TODO: why mutliplied with - 1 in source code? 
     toReturnQ2 = np.average(Q2) #*(-1)  
-    return toReturnQ2
+    return float(toReturnQ2)
 
 def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarray) -> float:
     """ Training
@@ -78,14 +78,15 @@ def R2_metric(training_snapshots  : np.ndarray, training_predictions  : np.ndarr
     """
     R2 = mean_squared_error(training_snapshots, training_predictions, multioutput='raw_values')  
     toShowR2 = np.average(R2)
-    return toShowR2
+    return float(toShowR2)
 
 
 def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
                                          data : np.ndarray,
                                          lambda_therm : pint.Quantity,
                                          t0: pint.Quantity,
-                                         delta_T: pint.Quantity) -> Tuple[pint.Quantity]:  
+                                         delta_T: pint.Quantity,
+                                         bc : Literal['isotherm', 'isoflux'] = 'isotherm') -> Tuple[pint.Quantity, pint.Quantity]:  
     """_summary_
 
     Args:
@@ -102,18 +103,34 @@ def calculate_thermal_entropy_generation(ref_mesh : pv.DataSet,
     """      
     ref_mesh.clear_data()
     ref_mesh.point_data["temp_field"] = data
-    ref_mesh = ref_mesh.clean(progress_bar = False)
+    try:
+        ref_mesh = ref_mesh.clean(progress_bar = False)
+    except AttributeError as e:
+        # logging.warning(e)
+        pass
+    
     temp_grad = ref_mesh.compute_derivative("temp_field", preference = "point").point_data["gradient"] * ureg.kelvin / ureg.meter
     s0 = calculate_S_therm(lambda_therm,
                            t0,
                            temp_grad)
+    
     ref_mesh.point_data["temp_field"] = s0.magnitude 
     integrated = ref_mesh.integrate_data()
-    s0_total = integrated.point_data['temp_field'][0] * ureg.watt / ureg.kelvin
-    # L = (ref_mesh.bounds.z_max - ref_mesh.bounds.z_min) * ureg.meter
-    L = (ref_mesh.bounds[-1] - ref_mesh.bounds[-2]) * ureg.meter
-    s0_characteristic = (lambda_therm * delta_T**2) / (L**2 * t0**2)
-    entropy_number = s0_total / s0_characteristic / (ref_mesh.volume * ureg.meter**3)  
+    s0_total : pint.Quantity = integrated.point_data['temp_field'][0] * ureg.watt / ureg.kelvin
+    
+    match bc:
+        case 'isotherm':
+            # L = (ref_mesh.bounds.z_max - ref_mesh.bounds.z_min) * ureg.meter
+            L = (ref_mesh.bounds[-1] - ref_mesh.bounds[-2]) * ureg.meter
+
+            entropy_number : pint.Quantity = caluclate_entropy_gen_number_isotherm(s_total=s0_total,
+                                                                L = L, lambda_m=lambda_therm,
+                                                                T_0 = t0,
+                                                                V = ref_mesh.volume * ureg.meter**3,
+                                                                delta_T=delta_T)
+        case 'isoflux':
+            raise NotImplementedError()
+        
     assert entropy_number.check(['dimensionless']) # check for correct unit
     return s0_total, entropy_number
 
@@ -158,3 +175,53 @@ def check_range_is_valid(allowed_range: pd.DataFrame, user_range: pd.DataFrame):
         max1 = float(user_range[col].max())
         
         assert min2 <= min1 <= max1 <= max2, f"Column {col} has out-of-bound values: {min1}, {max1} not in [{min2}, {max2}]"
+        
+        
+def find_snapshot_path(projection: Literal['Mapped', 'Original'],
+                       suffix : str,
+                       field_name: Literal['Temperature', 'Entropy'],
+                       root_data_folder : Path,
+                       control_mesh_suffix : str,
+                       data_type: Literal['Training', 'Test']) -> np.ndarray:
+    
+    match projection:
+        case"Mapped":
+            export_root = root_data_folder / f"{data_type}{projection}" / control_mesh_suffix / "Exports"
+        case "Original":
+            export_root = root_data_folder / f"{data_type}{projection}" 
+        
+    assert export_root.exists(), f"Export root {export_root} does not exist."
+    
+    match field_name:
+        case "Temperature":
+            if 'init' in suffix.lower() and 'grad' in suffix.lower():
+                logging.info(f"Entered {data_type}_Temperature_minus_tgrad.npy")
+                snapshots_npy      = np.load(export_root / f"{data_type}_Temperature_minus_tgrad.npy")
+            elif 'init' in suffix.lower():
+                snapshots_npy      = np.load(export_root / f"{data_type}_Temperature.npy")
+                snapshots_npy  = snapshots_npy -  snapshots_npy[:, 0, :] # last time step
+            else:
+                logging.info(f"Entered {data_type}_Temperature.npy")
+                snapshots_npy      = np.load(export_root / f"{data_type}_Temperature.npy")
+        case "Entropy":
+            snapshots_npy      = np.load(export_root / f"{data_type}_entropy_gen_per_vol_thermal.npy")
+
+    return snapshots_npy
+
+
+def find_basis_functions(projection: Literal['Mapped', 'Original'],
+                         suffix : str,
+                         accuracy: float,
+                         field_name: Literal['Temperature', 'Entropy'],
+                         root_data_folder : Path,
+                         control_mesh_suffix : str) -> np.ndarray:
+    match projection:
+        case "Mapped":
+            basis_func_path = root_data_folder / "TrainingMapped" / control_mesh_suffix / f"BasisFunctions{field_name}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+        case "Original":
+            basis_func_path = root_data_folder / "TrainingOriginal" / f"BasisFunctions{field_name}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+    
+    assert basis_func_path.exists()
+    logging.info(f"{basis_func_path=}")
+    return np.load(basis_func_path)
+    

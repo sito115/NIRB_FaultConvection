@@ -11,13 +11,14 @@ import re
 from datetime import datetime
 sys.path.append(str(Path(__file__).parents[1]))
 from src.offline_stage import NirbModule, NirbDataModule, get_n_outputs
-from src.pod import MinMaxNormalizer, MeanNormalizer, Standardizer, Normalizer
+from src.pod import MinMaxNormalizer, MeanNormalizer, Standardizer, Normalizer, match_scaler
 from comsol_module import COMSOL_VTU
 from src.utils import (load_pint_data,
                        setup_logger,
                        safe_parse_quantity,
                        Q2_metric,
-                       calculate_thermal_entropy_generation)
+                       calculate_thermal_entropy_generation,
+                       find_snapshot_path)
 
 
     
@@ -38,16 +39,16 @@ torch.serialization.add_safe_globals([torch.nn.modules.activation.Tanh,
 
 def main():
 
-    PARAMETER_SPACE = "08"
+    PARAMETER_SPACE = "09"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
     cutoff_datetime = datetime(2025, 6, 5, 15, 0, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
     IS_OVERWRITE = True
-    PROJECTION = "Original"  # "Mapped" or "Original"
-    FIELD_NAME = "Entropy"
-    is_clean_mesh = True
+    PROJECTION = "Mapped"  # "Mapped" or "Original"
+    FIELD_NAME = "Temperature" #"Entropy"
+    is_clean_mesh = False
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if path.stat().st_mtime > cutoff_datetime])
     chk_pt_paths = [s for s in chk_pt_paths if 'zc' not in str(s)]
@@ -56,11 +57,9 @@ def main():
     elif FIELD_NAME == "Entropy":
         chk_pt_paths = [s for s in chk_pt_paths if FIELD_NAME.lower() in str(s).lower()]
 
-    chk_pt_paths = [Path("/Users/thomassimader/Library/CloudStorage/OneDrive-geomeconGmbH/PhD/NIRB/data/08/optuna_logsEntropy/trial_22/checkpoints/epoch=6999-Q2_val=1.72e-04.ckpt")]
-    
     assert len(chk_pt_paths) > 0
     
-    control_mesh_suffix = None # "s100_100_100_b0_4000_0_5000_-4000_0"
+    control_mesh_suffix = "s50_50_50_b0_4000_0_5000_-4000_0"
     
     basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" if control_mesh_suffix else ROOT / f"BasisFunctions{FIELD_NAME}"
     basis_functions_folder.exists()
@@ -98,7 +97,7 @@ def main():
         test_parameters[:, 0] = np.log10(test_parameters[:, 0])
 
     if control_mesh_suffix is not None:
-        comsol_data = COMSOL_VTU(ROOT / f"Training{PROJECTION}" / control_mesh_suffix /f"Training_000_{control_mesh_suffix}.vtu")
+        comsol_data = COMSOL_VTU(ROOT / f"Training{PROJECTION}" / control_mesh_suffix /f"Training_000_{control_mesh_suffix}.vtk", is_clean_mesh=is_clean_mesh)
     else:
         comsol_data = COMSOL_VTU(ROOT / "TrainingOriginal" / "Training_000.vtu", is_clean_mesh=is_clean_mesh)
     comsol_data.mesh.clear_data()
@@ -163,6 +162,7 @@ def main():
             Entropy_MSE_train FLOAT,
             Entropy_R2_train FLOAT,
             Path TEXT,
+            Path_mtime TEXT,
             UNIQUE(norm, Version, Accuracy, Path)  -- Required for ON CONFLICT
         )
         ''')
@@ -180,59 +180,16 @@ def main():
             logging.info(f'Skipped {chk_pt_path.name}: Already in database')
             continue
         
-        if PROJECTION == "Mapped":
-            export_root_train = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "Exports"
-            export_root_test = ROOT / f"Test{PROJECTION}" / control_mesh_suffix / "Exports"
-        else:
-            export_root_train = ROOT / f"Training{PROJECTION}" 
-            export_root_test = ROOT / f"Test{PROJECTION}"
-            
-        assert export_root_train.exists(), f"Export root train {export_root_train} does not exist."
-        assert export_root_test.exists(), f"Export root test {export_root_test} does not exist."
         
-        match FIELD_NAME:
-            case "Temperature":
-                if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-                    training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
-                    test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
-                    training_snapshots  = training_snapshots_npy[:, -1, :]
-                    test_snapshots      = test_snapshots_npy[:, -1, :]
-                elif 'init' in SUFFIX.lower():
-                    training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
-                    test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
-                    training_snapshots  = training_snapshots_npy[:, -1, :]
-                    training_snapshots  = training_snapshots_npy[:, -1, :] -  training_snapshots_npy[:, 0, :] # last time step
-                    test_snapshots      = test_snapshots_npy[:, -1, :] - test_snapshots_npy[:, 0, :]
-                else:
-                    training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
-                    test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
-                    training_snapshots  = training_snapshots_npy[:, -1, :]
-                    test_snapshots      = test_snapshots_npy[:, -1, :]
-            case "Entropy":
-                training_snapshots_npy      = np.load(export_root_train / "Training_entropy_gen_per_vol_thermal.npy")
-                test_snapshots_npy          = np.load(export_root_test / "Test_entropy_gen_per_vol_thermal.npy")
-                training_snapshots  = training_snapshots_npy[:, -1, :]
-                test_snapshots      = test_snapshots_npy[:, -1, :]     
+        training_snapshots_npy = find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Training")
+        test_snapshots_npy = find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Test")
+        training_snapshots  = training_snapshots_npy[:, -1, :]
+        test_snapshots      = test_snapshots_npy[:, -1, :]     
+        del test_snapshots_npy, training_snapshots_npy
 
-
-        if "mean" in SUFFIX.lower():
-            scaling_output = MeanNormalizer()
-        elif "min_max" in SUFFIX.lower():
-            scaling_output = MinMaxNormalizer()
-        else:
-            raise ValueError("Invalid suffix.")
+        scaling_output = match_scaler(SUFFIX)
+        scaling_features = match_scaler(scaler_features)
         
-
-        if  "standard" in scaler_features.lower():
-            scaling_features = Standardizer()
-        elif "min_max" in scaler_features.lower() or "minmax" in scaler_features.lower():
-            scaling_features = MinMaxNormalizer()
-        elif "mean" in scaler_features.lower():
-            scaling_features = MeanNormalizer()
-        else:
-            raise ValueError(f"Unknown scaler_features: {scaler_features}")
-        logging.info(f'Scaling output: {scaling_output}, Scaling features: {scaling_features}')
-
         data_module = NirbDataModule(
             basis_func_mtrx=basis_functions,
             training_snaps=training_snapshots,
@@ -276,9 +233,6 @@ def main():
                 assert np.all(tgrad > 0)
                 test_snap_unscaled = data_module.test_snaps[test_idx] + tgrad
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled) + tgrad
-            elif 'init' in SUFFIX.lower():
-                test_snap_unscaled = data_module.test_snaps[test_idx] + test_snapshots_npy[test_idx, 0, :]
-                prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled) +  test_snapshots_npy[test_idx, 0, :]
             else:
                 test_snap_unscaled = data_module.test_snaps[test_idx]
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
@@ -406,28 +360,30 @@ def main():
             INSERT INTO nirb_results (
                 norm, Q2_scaled, Q2_unscaled, R2_scaled, R2_unscaled,
                 Version, Entropy_MSE_test, Entropy_R2_test,
-                Entropy_MSE_train, Entropy_R2_train, Accuracy, Path, Epoch, Global_step, feature_scaling
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                Entropy_MSE_train, Entropy_R2_train, Accuracy, Path,
+                Epoch, Global_step, feature_scaling, Path_mtime
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(norm, Version, Accuracy, Path) DO UPDATE SET
                 Q2_scaled = excluded.Q2_scaled,
-                feature_scaling = excluded.feature_scaling,
                 Q2_unscaled = excluded.Q2_unscaled,
                 R2_scaled = excluded.R2_scaled,
                 R2_unscaled = excluded.R2_unscaled,
-                Global_step = excluded.Global_step,
-                Epoch  = excluded.Epoch,
                 Entropy_MSE_test = excluded.Entropy_MSE_test,
                 Entropy_R2_test = excluded.Entropy_R2_test,
                 Entropy_MSE_train = excluded.Entropy_MSE_train,
                 Entropy_R2_train = excluded.Entropy_R2_train,
-                Path = excluded.Path,
-                Accuracy = excluded.Accuracy
+                Epoch = excluded.Epoch,
+                Global_step = excluded.Global_step,
+                feature_scaling = excluded.feature_scaling,
+                Path_mtime = excluded.Path_mtime
         ''', (
             SUFFIX, q2_scaled, q2_unscaled, r2_scaled, r2_unscaled,
             version, entropy_mse_test, entropy_corr_coeff_test,
-            entropy_mse_train, entropy_corr_coeff_train, ACCURACY, str(chk_pt_path), epoch, global_step, scaler_features
+            entropy_mse_train, entropy_corr_coeff_train, ACCURACY,
+            str(chk_pt_path), epoch, global_step, scaler_features,
+            datetime.fromtimestamp(chk_pt_path.stat().st_mtime).strftime("%y-%m-%d-%h")
         ))
+
         conn.commit()
         conn.close()
 

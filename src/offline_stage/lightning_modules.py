@@ -8,6 +8,7 @@ from src.utils.helpers import R2_metric, Q2_metric
 import numpy as np
 from torchmetrics import MeanAbsoluteError
 import optuna
+import logging
 import warnings
 
 class NirbModule(L.LightningModule):
@@ -18,7 +19,7 @@ class NirbModule(L.LightningModule):
                  learning_rate : float = 1e-3,
                  **kwargs):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=['activation'])
         self.learning_rate = learning_rate
         self.loss = nn.MSELoss()
         self.activation = activation
@@ -73,6 +74,7 @@ class NirbModule(L.LightningModule):
         y_hat_cpu = y_hat.detach().cpu().numpy()
         loss = self.loss(y_hat, y)  # loss(input, target)
         metrics = {"val_loss": loss}
+        logging.debug(f"Validation Step batch size = {x.size()[0]}")
         if self.basis_functions is not None:
             if y_hat_cpu.shape[0] == self.val_snaps_scaled.shape[0]: ## Only compute Q2 if batch size and len validation snaps are the same (only when devices cpu = 1, otherwise it results in an error)
                 full_solution_test = np.matmul(y_hat_cpu, self.basis_functions)

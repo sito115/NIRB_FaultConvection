@@ -195,3 +195,16 @@ def standardize(array: np.ndarray, mean:np.ndarray, var:np.ndarray) -> np.ndarra
     """    
     
     return (array - mean)/np.sqrt(var)
+
+
+def match_scaler(s: str) -> Normalizer:
+    if  "standard" in s.lower():
+        scaler = Standardizer()
+    elif "min_max" in s.lower() or "minmax" in s.lower():
+        scaler = MinMaxNormalizer()
+    elif "mean" in s.lower():
+        scaler = MeanNormalizer()
+    else:
+        raise ValueError(f"Unknown scaler_features: {s}")
+    logging.info(f"Selected {scaler}")
+    return scaler

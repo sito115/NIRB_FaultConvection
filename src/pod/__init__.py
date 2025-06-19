@@ -1,2 +1,2 @@
 from .pod_class import POD
-from .normalizer import MinMaxNormalizer, Standardizer, MeanNormalizer, Normalizer
+from .normalizer import MinMaxNormalizer, Standardizer, MeanNormalizer, Normalizer, match_scaler

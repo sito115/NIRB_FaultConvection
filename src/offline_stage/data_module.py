@@ -11,13 +11,13 @@ class NirbDataModule():
                  basis_func_mtrx : np.ndarray,
                  training_snaps: np.ndarray,
                  training_param: np.ndarray,
+                 normalizer : Normalizer,
+                 standardizer_features : Normalizer,
+                 batch_size: int,
                  test_snaps: np.ndarray = None,
                  test_param: np.ndarray = None,
                  val_snaps: np.ndarray = None,
-                 val_param: np.ndarray = None,
-                 batch_size: int = 20,
-                 normalizer : Normalizer = MinMaxNormalizer(),
-                 standardizer_features : Normalizer = Standardizer()):
+                 val_param: np.ndarray = None):
         """Data Module for NIRB.
 
         Args:

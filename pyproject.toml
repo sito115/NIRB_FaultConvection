@@ -17,9 +17,11 @@ dependencies = [
     "JPype1",
     "vtk>=9.3.1",
     "salib",
-    "comsol_module",
+    "comsol-module",
     "mph",
     "torch>=2.7.1",
+    "sqlalchemy>=2.0.41",
+    "mysql-connector-python>=9.3.0",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +48,8 @@ dev = [
     # "optuna-fast-fanova>=0.0.4",
     "gunicorn>=23.0.0",
     "pytest>=8.3.5",
+    "flake8-functions>=0.0.8",
+    "python-dotenv>=1.1.0",
 ]
 offline-stage = [
     "lightning>=2.5.1.post0",
@@ -65,5 +69,24 @@ log_date_format = "%Y-%m-%d %H:%M:%S"
 
 [tool.uv.sources]
 salib = { path = "./src/SAlib", editable = true }
-comsol_module = { path = "./src/comsol_module", editable = true }
 mph = { path = "./src/MPh" }
+comsol-module = { path = "src/comsol_module", editable = true }
+
+[tool.flake8]
+# Check that this is aligned with your other tools like Black
+max-line-length = 100
+max-function-length = 100 # ⬅️ Enforces max lines per function
+extend-select = ["FLL"] # Enables function length linting
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv/",
+    "tests/",
+    "notebooks",
+    "data",
+    ".venv",
+    ".pytest_cache",
+    "docs",
+]
+# Use extend-ignore to add to already ignored checks which are anti-patterns like W503.
+extend-ignore = ["E203"]

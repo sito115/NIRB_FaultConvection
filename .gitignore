@@ -18,7 +18,6 @@ PythonSkripts/*
 *.png
 *.csv
 *.sqlite3
-*.vti
 *.mph
 *.html
 events.out*
@@ -27,3 +26,8 @@ events.out*
 *.lock
 .DS_Store
 *.log
+*.vtk
+*.vti
+*.db
+*.txt
+*encryptable

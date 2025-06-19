@@ -1,3 +1,4 @@
+import logging
 import lightning as L
 from pathlib import Path
 from lightning.pytorch.callbacks import ModelCheckpoint
@@ -7,30 +8,33 @@ from torch import nn
 import numpy as np
 import sys 
 import logging
+import os
+from datetime import datetime
+from dotenv import load_dotenv
 sys.path.append(str(Path(__file__).parents[1]))
-from src.pod.normalizer import MeanNormalizer, MinMaxNormalizer, Standardizer
-from src.offline_stage import NirbModule, NirbDataModule, ComputeR2OnTrainEnd, OptunaPruning
-from src.utils import load_pint_data
+from src.pod.normalizer import match_scaler
+from src.offline_stage import NirbModule, NirbDataModule, OptunaPruning
+from src.utils import load_pint_data, find_snapshot_path, setup_logger
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
-    hidden1 = trial.suggest_int("hiden1", low = 2, high = 300)
+    hidden1 = trial.suggest_int("hidden1", low = 2, high = 100)
     num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 4)
     hidden_layers_betw = [
-        trial.suggest_int(f"hidden_layers_betw{i}", 50, 400, step=2)
+        trial.suggest_int(f"hidden_layers_betw{i}", 50, 300, step=2)
         for i in range(num_inbetw_layers)
     ]
-    hidden6 = trial.suggest_int("hiden6", low = 30,  high = 300 ,step=2)
+    hidden6 = trial.suggest_int("hidden6", low = 30,  high = 100 ,step=2)
     
-    suffix = trial.suggest_categorical("scaler_output", ["min_max", "mean", "min_max_init_grad", "mean_init_grad"])
-    scaler_features = trial.suggest_categorical("scaler_features", ["Standardizer", "Mean", "Min_Max"])
-    accuracy = 1e-5 #trial.suggest_categorical("accuracy", [1e-5, 1e-6])
+    suffix = trial.suggest_categorical("scaler_output", ["mean", "min_max_init_grad"])
+    scaler_features = trial.suggest_categorical("scaler_features", ["standardizer",  "min_max"])
+    accuracy = trial.suggest_categorical("accuracy", [1e-5, 1e-6])
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 5e-6, 2e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 10, 150)
+    batch_size = trial.suggest_int("batch_size", 15 , 100)
 
-    activation_name = trial.suggest_categorical("activation", ["sigmoid", "relu", "leaky_relu", "tanh"])
+    activation_name = trial.suggest_categorical("activation", ["sigmoid", "leaky_relu", "tanh"])
     if activation_name == "leaky_relu":
         activation_fn = nn.LeakyReLU()
     elif activation_name == "relu":
@@ -40,53 +44,22 @@ def objective(trial: optuna.Trial) -> float:
     elif activation_name =="tanh":
         activation_fn = nn.Tanh()
 
-    
-
     if PROJECTION == "Mapped":
-        export_root_train = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / "Exports"
-        export_root_test = ROOT / f"Test{PROJECTION}" / control_mesh_suffix / "Exports"
         basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
-
     else:
-        export_root_train = ROOT / f"Training{PROJECTION}" 
-        export_root_test = ROOT / f"Test{PROJECTION}"
         basis_func_path = ROOT / f"BasisFunctions{FIELD_NAME}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
 
 
-    assert export_root_train.exists(), f"Export root train {export_root_train} does not exist."
-    assert export_root_test.exists(), f"Export root test {export_root_test} does not exist."
     assert basis_func_path.exists(), f"Basis function path {basis_func_path} does not exist."
     basis_functions         = np.load(basis_func_path)
     
-    match FIELD_NAME:
-        case "Temperature":
-            if 'init' in suffix.lower() and 'grad' in suffix.lower():
-                logging.debug("Entered 'init' and 'grad' condition")
-                training_snapshots_npy      = np.load(export_root_train / "Training_Temperature_minus_tgrad.npy")
-                test_snapshots_npy          = np.load(export_root_test / "Test_Temperature_minus_tgrad.npy")
-            else:
-                logging.debug("Entered else statement condition")
-                training_snapshots_npy      = np.load(export_root_train / "Training_Temperature.npy")
-                test_snapshots_npy          = np.load(export_root_test / "Test_Temperature.npy")
-            training_snapshots  = training_snapshots_npy[:, -1, :]
-            test_snapshots      = test_snapshots_npy[:, -1, :]
-        case "Entropy":
-            training_snapshots_npy      = np.load(export_root_train / "Training_entropy_gen_per_vol_thermal.npy")
-            test_snapshots_npy          = np.load(export_root_test / "Test_entropy_gen_per_vol_thermal.npy")
-            training_snapshots  = training_snapshots_npy[:, -1, :]
-            test_snapshots      = test_snapshots_npy[:, -1, :]         
-        
+    training_snapshots = find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Training")[:, -1, :]
+    test_snapshots = find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Test")[:, -1, :]
+ 
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-    
-    
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
-    
-    # mask = ~(training_snapshots == 0).all(axis=(1, 2)) # omit indices that are not computed yet
-    # training_snapshots       = training_snapshots[mask]
-    # training_parameters      = training_parameters[mask, :]
-    
     
     if PARAMETER_SPACE == "01":
         training_parameters[:, 0] = np.log10(training_parameters[:, 0])
@@ -95,22 +68,11 @@ def objective(trial: optuna.Trial) -> float:
     assert len(training_snapshots) == len(training_parameters)
     # Prepare data
 
-    if scaler_features.lower() == "standardizer":
-        scaler_features = Standardizer()
-    elif scaler_features.lower() == "mean":
-        scaler_features = MeanNormalizer()
-    elif scaler_features.lower() == "min_max":
-        scaler_features = MinMaxNormalizer()
-    else:
-        raise ValueError("Invalid scaler for features.")
-
-
-    if "mean" in suffix.lower():
-        scaling_outputs = MeanNormalizer()
-    elif "min_max" in suffix.lower():
-        scaling_outputs = MinMaxNormalizer()
-    else:
-        raise ValueError("Invalid suffix.")
+    scaler_features = match_scaler(scaler_features)
+    scaling_outputs = match_scaler(suffix)
+    logging.info(f"{scaler_features=}")
+    logging.info(f"{scaling_outputs=}")
+    
 
     data_module = NirbDataModule(
         basis_func_mtrx=basis_functions,
@@ -129,7 +91,7 @@ def objective(trial: optuna.Trial) -> float:
     model = NirbModule(n_inputs, 
                        [hidden1] + hidden_layers_betw + [hidden6],
                        n_outputs,
-                       activation=str(activation_fn),
+                       activation=activation_fn,
                        learning_rate=lr,
                        batch_size=batch_size,
                        scaler_features=str(scaler_features),
@@ -142,41 +104,37 @@ def objective(trial: optuna.Trial) -> float:
         mode="min",                  # we're minimizing loss
         )
     
-    
-    r2_callback = ComputeR2OnTrainEnd(data_module.training_param_scaled,
-                                      data_module.training_snaps_scaled,
-                                      data_module.basis_func_mtrx)
-
     model_ckpt = ModelCheckpoint(
             monitor = "val_loss",
             save_last=True,
-            save_top_k=3,
+            save_top_k=2,
             mode="min",
-            filename = "{epoch:02d}-{Q2_val:.2e}",
+            filename = "{epoch:02d}-{val_loss:.2e}",
             every_n_train_steps = 500
         )
 
     logger_dir_name = f"optuna_logs{FIELD_NAME}"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     logger = TensorBoardLogger(ROOT, name=logger_dir_name,
-                               version=f"trial_{trial.number}",
+                               version=f"trial_{trial.number}_{timestamp}",
                                default_hp_metric=False)
-    trainer = L.Trainer(max_epochs=N_STEPS,
+    trainer = L.Trainer(max_epochs=N_EPOCHS,
                         enable_checkpointing=True,
                         logger=logger,
-                        callbacks=[r2_callback, optuna_pruning, model_ckpt],
+                        callbacks=[optuna_pruning, model_ckpt],
                         enable_progress_bar=False,
-                        max_time={"minutes": 80},
+                        max_time={"minutes": 60},
                         )
     
-    model.basis_functions = data_module.basis_func_mtrx
-    model.val_snaps_scaled = data_module.val_snaps_scaled
+    # model.basis_functions = data_module.basis_func_mtrx
+    # model.val_snaps_scaled = data_module.val_snaps_scaled
     trainer.fit(model,
                 train_dataloaders=data_module.train_dataloader(shuffle = True,
-                                                                num_workers = N_JOBS,
-                                                               persistent_workers=True),
+                                                                persistent_workers=True,
+                                                                num_workers = N_JOBS + 1),
                 val_dataloaders=data_module.validation_dataloader(num_workers = 1,
                                                                   persistent_workers=True)
-                )
+    )
     
     # results = trainer.test(model, dataloaders=data_module.test_dataloader())
     # test_loss = results[0]['test_loss']
@@ -187,31 +145,52 @@ def objective(trial: optuna.Trial) -> float:
     return float(train_loss)
 
 if __name__ == "__main__":
-    N_STEPS = 100_000 #100_000 #20_000
-    PROJECTION = "Original"  # "Original" or "Mapped"
+    setup_logger(is_console=True, level=logging.INFO)
+    N_EPOCHS = 50_000 #100_000 #20_000
+    PROJECTION = "Mapped"  # "Original" or "Mapped"
     FIELD_NAME = "Temperature"
-    control_mesh_suffix =  "s100_100_100_b0_4000_0_5000_-4000_-0"
+    spacing = 50
+    control_mesh_suffix =  f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
     # ACCURACY = 1e-5
     # SUFFIX = "min_max_init_grad"
-    PARAMETER_SPACE = "07"
+    PARAMETER_SPACE = "09"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
-    STUDY_NAME = "sweep1"
-    N_JOBS = 1
-    N_TRIALS = 150
+    STUDY_NAME = "sweep"
+    N_JOBS = 3
+    N_TRIALS = 40
 
 
     assert ROOT.exists(), f"Not found: {ROOT}"
-    db_path = ROOT / f"optuna_db{FIELD_NAME}.sqlite3" #/f"db_{ACCURACY:.1e}{SUFFIX}.sqlite3"
+    # db_name = f"PS{PARAMETER_SPACE}_Optuna_{FIELD_NAME}" 
+    # load_dotenv()
+    # storage_param = {
+    #     "storage": f"mysql+mysqlconnector://tsimader:{os.getenv("TSIMADER_SQL_PASSWORD")}@localhost/{db_name}",
+    #     "study_name": STUDY_NAME,
+    #     "load_if_exists": True
+    # }
+    db_path = ROOT / f"optuna_db{FIELD_NAME}.sqlite3" 
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
         "study_name": STUDY_NAME,
         "load_if_exists": True
     }
+    
+    
     study = optuna.create_study(direction="minimize",
                                 pruner=optuna.pruners.MedianPruner(
                                     n_startup_trials=N_TRIALS * 0.33,
-                                    n_warmup_steps=int(N_STEPS*0.33),
+                                    n_warmup_steps=int(N_EPOCHS*0.33),
                                     n_min_trials=20
                                 ),
                                 **storage_param)
+    
+    study.enqueue_trial({"hidden1": 30,
+                         "hidden6": 80,
+                         "num_inbetw_layers" : 2,
+                         "suffix" : "min_max_init_grad",
+                         "scaler_features": "min_max",
+                         "activation" : "sigmoid",
+                         "lr": 1e-3,
+                         "batch_size": 25})
+    
     study.optimize(objective, n_trials=N_TRIALS, n_jobs=N_JOBS)

@@ -17,8 +17,9 @@ import random
 import logging
 import optuna
 sys.path.append(str(Path(__file__).parents[1]))
-from src.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd, Normalizations
-from src.utils import load_pint_data, plot_data, setup_logger
+from src.pod import match_scaler
+from src.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd
+from src.utils import load_pint_data, plot_data, setup_logger, find_snapshot_path
 
 
 def main():
@@ -31,6 +32,7 @@ def main():
     ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
     assert ROOT.exists(), f"Not found: {ROOT}"
     N_DEVICES = 2
+    PROJECTION = "Original"
     control_mesh_suffix =  None #"s100_100_100_b0_4000_0_5000_-4000_-0"
     
     if IS_RUN_OPTUNA:
@@ -151,25 +153,8 @@ def main():
             test_snapshots      = test_snapshots[:, -1, :]
             logging.debug("Entered else statement condition")
         
-
-        if "mean" in SUFFIX.lower():
-            scaling_output = Normalizations.Mean
-        elif "min_max" in SUFFIX.lower():
-            scaling_output = Normalizations.MinMax
-        else:
-            raise ValueError("Invalid suffix.")
-        print(f"Selected {scaling_output}")
-
-        params_scaler_features_str : str = row.params_scaler_features
-        if "mean" in params_scaler_features_str.lower():
-            params_scaler_features = Normalizations.Mean
-        elif "min_max" in params_scaler_features_str.lower():
-            params_scaler_features = Normalizations.MinMax
-        elif "standard" in params_scaler_features_str.lower():
-            params_scaler_features = Normalizations.Standardizer
-        else:
-            raise ValueError("Invalid suffix.")
-        print(f"Selected {params_scaler_features}") 
+        scaling_output = match_scaler(SUFFIX)
+        params_scaler_features = match_scaler(row.params_scaler_features)
 
         random.seed(12342)
         n_validation : int = 10

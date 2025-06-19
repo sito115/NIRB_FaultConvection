@@ -21,10 +21,18 @@ def main():
     IS_EXPORT_ARRAY = False
     IS_EXPORT_ENTROPY_NUMBERS = True
     IS_EXPORT_HTML = True
+    PROJECTION = "Mapped"
+    spacing = 50
+    control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
+    is_clean = False
 
-    import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Original"
+    import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}{PROJECTION}"
+    export_folder = import_folder
+    if PROJECTION == "Mapped":
+        import_folder = import_folder / control_mesh_suffix
+        export_folder = import_folder / "Exports"
     assert import_folder.exists(), f"Import folder {import_folder} does not exist."
-    comsol_vtu_files = sorted([path for path in import_folder.rglob("*.vtu")])
+    comsol_vtu_files = sorted([path for path in import_folder.rglob("*.vt*")])
     N_SNAPS = len(comsol_vtu_files)
 
     param_folder = ROOT / "data" / PARAMETER_SPACE / "Exports"
@@ -34,18 +42,17 @@ def main():
 
 
    
-    N_TIME_STEPS = len( COMSOL_VTU(comsol_vtu_files[0]).times.keys())
+    N_TIME_STEPS = len( COMSOL_VTU(comsol_vtu_files[0], is_clean_mesh=is_clean).times.keys())
     TIME_STEPS = np.arange(N_TIME_STEPS) 
-    N_CELLS = COMSOL_VTU(comsol_vtu_files[0]).mesh.n_points
-    if IS_EXPORT_ENTROPY_NUMBERS:
-        entropy_gen_number_therm = np.zeros((N_SNAPS, N_TIME_STEPS))
-        entropy_gen_number_visc = np.zeros((N_SNAPS, N_TIME_STEPS))
-    if IS_EXPORT_ARRAY:
-        entropy_gen_per_vol_thermal = np.zeros((N_SNAPS, N_TIME_STEPS, N_CELLS))
-        entropy_gen_per_vol_visc = np.zeros_like(entropy_gen_per_vol_thermal)
+    N_CELLS = COMSOL_VTU(comsol_vtu_files[0],  is_clean_mesh=is_clean).mesh.n_points
+
+    entropy_gen_number_therm = np.zeros((N_SNAPS, N_TIME_STEPS))
+    entropy_gen_number_visc = np.zeros((N_SNAPS, N_TIME_STEPS))
+    entropy_gen_per_vol_thermal = np.zeros((N_SNAPS, N_TIME_STEPS, N_CELLS))
+    entropy_gen_per_vol_visc = np.zeros_like(entropy_gen_per_vol_thermal)
 
     for idx_snap in tqdm(range(N_SNAPS), total = N_SNAPS):
-        comsol_data = COMSOL_VTU(comsol_vtu_files[idx_snap])
+        comsol_data = COMSOL_VTU(comsol_vtu_files[idx_snap],  is_clean_mesh=is_clean)
         param_df = pd.read_csv(param_files[idx_snap], index_col = 0)
         param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
         lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
@@ -56,71 +63,70 @@ def main():
         model_dict = {
             'lambda_m' : lambda_therm.magnitude,
             'T0' : t0.magnitude,
-            'mu0': comsol_data.get_array('Dynamic_viscosity', is_cell_data=False)[-1, :],
+            'mu0': 1e-3, # comsol_data.get_array('Dynamic_viscosity', is_cell_data=False)[-1, :],
             'k_m': 1.5e-13,
             'delta_T' : delta_T.magnitude,
             'H' : comsol_data.mesh.bounds.z_max - comsol_data.mesh.bounds.z_min,
         }
+                
+        entropy_per_vol = comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
+                                                                        time_steps=TIME_STEPS,
+                                                                        is_return_as_integration=False)
         
-        if IS_EXPORT_ARRAY:
+        entropy_gen_per_vol_thermal[idx_snap, :, :] = entropy_per_vol[:, : , 0]  # thermal entropy generation per volume
+        entropy_gen_per_vol_visc[idx_snap, :, :] = entropy_per_vol[:, : , 1]
+    
+    
         
-            entropy_per_vol = comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
-                                                        time_steps=TIME_STEPS,
-                                                        is_return_as_integration=False)
-            
-            entropy_gen_per_vol_thermal[idx_snap, :, :] = entropy_per_vol[:, : , 0]  # thermal entropy generation per volume
-            entropy_gen_per_vol_visc[idx_snap, :, :] = entropy_per_vol[:, : , 1]
-        
-        if IS_EXPORT_ENTROPY_NUMBERS:
-        
-            entropy_integrated= comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
-                                                        time_steps=TIME_STEPS,
-                                                        is_return_as_integration=True,)
-            
-            entropy_gen_number_therm[idx_snap, :] = caluclate_entropy_gen_number_isotherm(s_total=entropy_integrated[:, 0],
-                                                                L = model_dict["H"], 
-                                                                lambda_m=model_dict["lambda_m"],
-                                                                T_0=model_dict["T0"],
-                                                                delta_T=model_dict["delta_T"],
-                                                                V = comsol_data.mesh.volume,)
+        entropy_integrated= comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
+                                                    time_steps=TIME_STEPS,
+                                                    is_return_as_integration=True,)
+        logging.info(f"{np.max(entropy_integrated)=:.3f}")
 
+        
+        entropy_gen_number_therm[idx_snap, :] = caluclate_entropy_gen_number_isotherm(s_total=entropy_integrated[:, 0],
+                                                            L = model_dict["H"], 
+                                                            lambda_m=model_dict["lambda_m"],
+                                                            T_0=model_dict["T0"],
+                                                            delta_T=model_dict["delta_T"],
+                                                            V = comsol_data.mesh.volume,)
+        logging.info(f"{np.max(entropy_gen_number_therm[idx_snap, :])=:.3f}")
 
-            entropy_gen_number_visc[idx_snap, :] = caluclate_entropy_gen_number_isotherm(s_total=entropy_integrated[:, 1],
-                                                                L = model_dict["H"], 
-                                                                lambda_m=model_dict["lambda_m"],
-                                                                T_0=model_dict["T0"],
-                                                                delta_T=model_dict["delta_T"],
-                                                                V = comsol_data.mesh.volume,)
+        entropy_gen_number_visc[idx_snap, :] = caluclate_entropy_gen_number_isotherm(s_total=entropy_integrated[:, 1],
+                                                            L = model_dict["H"], 
+                                                            lambda_m=model_dict["lambda_m"],
+                                                            T_0=model_dict["T0"],
+                                                            delta_T=model_dict["delta_T"],
+                                                            V = comsol_data.mesh.volume,)
 
     if IS_EXPORT_ENTROPY_NUMBERS:
-        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_number_therm.npy", entropy_gen_number_therm)
-        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
+        np.save(export_folder /f"{DATA_TYPE}_entropy_gen_number_therm.npy", entropy_gen_number_therm)
+        np.save(export_folder /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
     if IS_EXPORT_ARRAY:
-        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
-        np.save(import_folder /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
+        np.save(export_folder /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
+        np.save(export_folder /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
 
-    if IS_EXPORT_ENTROPY_NUMBERS:
-        fig = go.Figure()
-        colors = px.colors.sample_colorscale("jet", [n/(N_SNAPS) for n in range(N_SNAPS)])
-        for idx in range(N_SNAPS):
-            fig.add_trace(go.Scatter(x=TIME_STEPS,
-                                    y=entropy_gen_number_therm[idx, :],
-                                    line=dict(color=colors[idx]),
-                                    marker_symbol='circle',
-                                    mode='lines+markers',
-                                    name=f'Thermal Entropy Gen Snap {idx}',
-                                    showlegend=False))
-            fig.add_trace(go.Scatter(x=TIME_STEPS,
-                                    y=entropy_gen_number_visc[idx, :],
-                                    mode='lines+markers',
-                                    line=dict(color=colors[idx], dash ='dash'),
-                                    marker_symbol='square',
-                                    name=f'Viscous Entropy Gen Snap {idx}',
-                                    showlegend=False))
-            
-        if IS_EXPORT_HTML:
-            fig.write_html(ROOT / "data" / PARAMETER_SPACE / "Exports" / f"{DATA_TYPE}_entropy_numbers.html" )
-        fig.show()
+    fig = go.Figure()
+    colors = px.colors.sample_colorscale("jet", [n/(N_SNAPS) for n in range(N_SNAPS)])
+    for idx in range(N_SNAPS):
+        fig.add_trace(go.Scatter(x=TIME_STEPS,
+                                y=entropy_gen_number_therm[idx, :],
+                                line=dict(color=colors[idx]),
+                                marker_symbol='circle',
+                                mode='lines+markers',
+                                name=f'Thermal Entropy Gen Snap {idx}',
+                                showlegend=False))
+        fig.add_trace(go.Scatter(x=TIME_STEPS,
+                                y=entropy_gen_number_visc[idx, :],
+                                mode='lines+markers',
+                                line=dict(color=colors[idx], dash ='dash'),
+                                marker_symbol='square',
+                                name=f'Viscous Entropy Gen Snap {idx}',
+                                showlegend=False))
+        
+    if IS_EXPORT_HTML:
+        fig.write_html(export_folder / f"{DATA_TYPE}_entropy_numbers.html" )
+    fig.show()
 
 if __name__ == "__main__":
     setup_logger(is_console=True, level=logging.INFO)

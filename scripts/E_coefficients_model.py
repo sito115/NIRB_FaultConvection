@@ -13,64 +13,63 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
-import random
 import logging
 import optuna
 sys.path.append(str(Path(__file__).parents[1]))
 from src.pod import match_scaler
 from src.offline_stage import NirbDataModule, NirbModule, ComputeR2OnTrainEnd
-from src.utils import load_pint_data, plot_data, setup_logger, find_snapshot_path
+from src.utils import load_pint_data, read_config, setup_logger, find_snapshot_path, find_basis_functions
 
 
 def main():
     seed_everything(42) 
     IS_RUN_OPTUNA = True
+    K_BEST_TRIALS = 3
+    N_DEVICES = 3
+    N_EPOCHS = 150_000 
     
-    
-    N_STEPS = 120_000 
-    PARAMETER_SPACE = "07"
-    ROOT = Path(__file__).parent.parent / "data" / PARAMETER_SPACE
+    ### config
+    config = read_config()
+    ROOT = config['data_folder']
     assert ROOT.exists(), f"Not found: {ROOT}"
-    N_DEVICES = 2
-    PROJECTION = "Original"
-    control_mesh_suffix =  None #"s100_100_100_b0_4000_0_5000_-4000_-0"
-    
+    FIELD_NAME = config['field_name']
+    PROJECTION = config['projection']
+    PARAMETER_SPACE = config['parameter_space']
+    control_mesh_suffix =  config['control_mesh_suffix']
+
     if IS_RUN_OPTUNA:
-        sqlite_file = ROOT / "optuna_db.sqlite3"
+        sqlite_file = ROOT / f"optuna_db{FIELD_NAME}.sqlite3"
         assert sqlite_file.exists()
         storage = f"sqlite:///{sqlite_file}"
         loaded_study = optuna.load_study(study_name="sweep", storage= storage)
         df_opt : pd.DataFrame = loaded_study.trials_dataframe()
-        trials = [148, 67, 114, 100, 71, 81, 110, 145]
+        trials = [8, 21, 12, 6]
         df_opt_trunc = df_opt[df_opt["number"].isin(trials)]
     
     else:
         param = {
-            'params_accuracy' : 1e-06 ,
-            'params_batch_size' : 25,
-            'params_lr': 1e-3,
-            'params_normalization': 'min_max_init_grad', ##'min_max_init_grad',
+            'params_accuracy' : 1e-05 ,
+            'params_batch_size' : 56,
+            'params_lr': 1.83e-3,
+            'params_scaler_output': 'min_max_init_grad', ##'min_max_init_grad',
+            'params_scaler_features': 'standard', ##'min_max_init_grad',
             'params_activation': 'sigmoid',
-            'layers' : [26, 100, 300, 300, 100]
+            'layers' : [47, 198, 120, 96, 28]
 
         }
         
-        
-        
         df_opt_trunc = pd.DataFrame([param])
         
-        # TODO: version 1 mean_init_grad
-        # batch_size: 50
+        # batch_size: 93
         # hidden_units:
-        # - 26
-        # - 281
-        # - 241
-        # - 95
-        # - 70
-        # learning_rate: 0.001
-        # n_inputs: 2
-        # n_outputs: 46
-
+        # - 79
+        # - 92
+        # - 66
+        # learning_rate: 0.00022858237228051074
+        # n_inputs: 1
+        # n_outputs: 65
+        # scaler_features: <src.pod.normalizer.MinMaxNormalizer object at 0x17d8611c0>
+        # scaler_outputs: <src.pod.normalizer.MeanNormalizer object at 0x17d860830>
 
     for idx, row in df_opt_trunc.iterrows():
         logging.info(row)
@@ -81,10 +80,10 @@ def main():
         activation_name = row.params_activation
     
         if IS_RUN_OPTUNA:
-            layers = [int(row.params_hiden1)]
+            layers = [int(row.params_hidden1)]
             for i in range(row.params_num_inbetw_layers):
                 layers.append(int(row[f'params_hidden_layers_betw{i}']))
-            layers.append(int(row.params_hiden6))
+            layers.append(int(row.params_hidden6))
         else:
             layers = row.layers
     
@@ -97,37 +96,15 @@ def main():
         elif activation_name =="tanh":
             activation_fn = nn.Tanh()
     
-        
-        if PARAMETER_SPACE == "07":
-            basis_func_path = ROOT /  "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-            if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-                train_snapshots_path = ROOT / "TrainingOriginal" / "Training_Temperature_minus_tgrad.npy" 
-                test_snapshots_path = ROOT / "TestOriginal" / "Test_Temperature_minus_tgrad.npy" 
-            else:
-                train_snapshots_path = ROOT / "TrainingOriginal" /  "Training_Temperature.npy"
-                test_snapshots_path = ROOT / "TestOriginal" /  "Test_Temperature.npy" 
-        elif PARAMETER_SPACE == "01":
-            basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / "BasisFunctions" / f"basis_fts_matrix_{ACCURACY:.1e}{SUFFIX}.npy"
-            if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-                train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_Temperature_minus_tgrad.npy" 
-                test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_Temperature_minus_tgrad.npy" 
-            else:
-                train_snapshots_path = ROOT / "TrainingMapped" / control_mesh_suffix / "Exports" / "Training_Temperature.npy"
-                test_snapshots_path = ROOT / "TestMapped" / control_mesh_suffix / "Exports" / "Test_Temperature.npy" 
-        else:
-            raise NotImplementedError(f"Paths for parameter space {PARAMETER_SPACE} not implemented yet.")
-        
         train_param_path = ROOT / "training_samples.csv"
         test_param_path = ROOT / "test_samples.csv"
 
+        training_snapshots = np.load(find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Training"))[:, -1, :]
+        test_snapshots     = np.load(find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Test"))[:, -1, :]
         
-        basis_functions         = np.load(basis_func_path)
-        training_snapshots      = np.load(train_snapshots_path)
+        basis_functions         = find_basis_functions(PROJECTION, SUFFIX, ACCURACY, FIELD_NAME, ROOT, control_mesh_suffix)
         training_parameters     = load_pint_data(train_param_path, is_numpy = True)
-        test_snapshots          = np.load(test_snapshots_path)
         test_parameters         = load_pint_data(test_param_path, is_numpy = True)
-        
-
         
         if PARAMETER_SPACE == "01":
             training_parameters[:, 0] = np.log10(training_parameters[:, 0])
@@ -140,26 +117,14 @@ def main():
         
         assert len(training_snapshots) == len(training_parameters)
 
-        if 'init' in SUFFIX.lower() and 'grad' in SUFFIX.lower():
-            training_snapshots  = training_snapshots[:, -1, :] # last time step
-            test_snapshots      = test_snapshots[:, -1, :]
-            logging.debug("Entered 'init' and 'grad' condition")
-        elif 'init' in SUFFIX.lower():
-            training_snapshots  = training_snapshots[:, -1, :] -  training_snapshots[:, 0, :] 
-            test_snapshots      = test_snapshots[:, -1, :] - test_snapshots[:, 0, :]
-            logging.debug("Entered 'init' condition")
-        else:
-            training_snapshots  = training_snapshots[:, -1, :]
-            test_snapshots      = test_snapshots[:, -1, :]
-            logging.debug("Entered else statement condition")
-        
         scaling_output = match_scaler(SUFFIX)
         params_scaler_features = match_scaler(row.params_scaler_features)
 
-        random.seed(12342)
-        n_validation : int = 10
+        # random.seed(12342)
+        # n_validation : int = 10
         # val_idx = random.sample(range(len(test_snapshots)), n_validation)  # upper bound is exclusive    
-        val_idx = np.arange(len(test_snapshots) - n_validation, len(test_snapshots))
+        # val_idx = np.arange(len(test_snapshots) - n_validation, len(test_snapshots))
+        
         data_module = NirbDataModule(
             basis_func_mtrx=basis_functions,
             training_snaps=training_snapshots,
@@ -174,21 +139,6 @@ def main():
         )
         
         
-        def plot_scaled_data():
-            plot_data(data_module.training_snaps,
-                    title = "Training Snapshots - Unscaled",
-                    export_path = ROOT / "Training - Unscaled.png")
-            plot_data(data_module.test_snaps,
-                    title = "Test Snapshots - Unscaled",
-                    export_path = ROOT / "Test - Unscaled.png")
-            plot_data(data_module.training_snaps_scaled,
-                    title = "Training Snapshots - Scaled",
-                    export_path = ROOT / f"Training - Scaled{SUFFIX}.png")
-            plot_data(data_module.test_snaps_scaled,
-                    title = "Test Snapshots - Scaled",
-                    export_path = ROOT / f"Test - Scaled{SUFFIX}.png")
-        # plot_scaled_data()
-        
         n_inputs = training_parameters.shape[1]
         n_outputs = basis_functions.shape[0]
         
@@ -198,8 +148,8 @@ def main():
                         activation=activation_fn,
                         learning_rate=LR,
                         batch_size=BATCH_SIZE,
-                        standardizer_features=str(params_scaler_features),
-                        normalizer =str(scaling_output),
+                        scaler_features=str(params_scaler_features),
+                        scaler_outputs =str(scaling_output),
                         )
         
 
@@ -215,19 +165,19 @@ def main():
         model.log_kwargs = log_kwargs
 
         logger_dir_name = f"nn_logs_{ACCURACY:.1e}{SUFFIX}"
-        logger = TensorBoardLogger(ROOT, name=logger_dir_name)
+        logger = TensorBoardLogger(ROOT / f"TensorBoardLogs{FIELD_NAME}", name=logger_dir_name)
         logging.info(f'{logger.log_dir=}')
         
         model_ckpt = ModelCheckpoint(
             monitor = "val_loss",
             save_last=True,
-            save_top_k=3,
+            save_top_k=K_BEST_TRIALS,
             mode="min",
             filename = "{epoch:02d}-{step:02d}-{val_loss:.2f}",
-            every_n_train_steps = 300
+            every_n_train_steps = 500
         )
         
-        trainer = L.Trainer(max_steps=N_STEPS,
+        trainer = L.Trainer(max_epochs=N_EPOCHS,
                             logger=logger,
                             callbacks=[r2_callback,model_ckpt],
                             strategy='ddp',
@@ -244,8 +194,8 @@ def main():
         except FileNotFoundError:
             pass
         
-        model.basis_functions = data_module.basis_func_mtrx
-        model.val_snaps_scaled = data_module.val_snaps_scaled
+        # model.basis_functions = data_module.basis_func_mtrx
+        # model.val_snaps_scaled = data_module.val_snaps_scaled
         trainer.fit(model=model,
                     train_dataloaders=data_module.train_dataloader(shuffle = True),
                     val_dataloaders=data_module.validation_dataloader(shuffle = False),

@@ -34,11 +34,11 @@ def handle_invalid_point_mask(target_point: np.ndarray,
 
 def main():   
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "09"
-    DATA_TYPE = "Training"
+    PARAMETER_SPACE = "10"
+    DATA_TYPE = "Test"
     FIELD_TO_EXPORT : str = "Temperature"
     SPACING = (50, 50, 50) # dx, dy, dz
-    DECIMAL_TOLERANCE =  1 # for assertation of min max values afterwards
+    DECIMAL_TOLERANCE =  2 # for assertation of min max values afterwards
     FILE_SUFFIX = 'vtk'
 
     data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original") # data_type) #"Truncated") # data_type)    

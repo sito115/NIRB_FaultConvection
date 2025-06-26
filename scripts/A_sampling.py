@@ -22,10 +22,10 @@ from src.sampling import Parameter
 def main():
     ### SETUP
     ROOT = Path(__file__).parent
-    N_TRAINING = 100
-    N_TEST = 20
+    N_TRAINING = 50
+    N_TEST = 0
     pint_pandas.PintType.ureg.formatter.default_format = "#D~"
-    random.seed(42)
+    # random.seed(42)
 
     
     ### DEFINE PARAMETERS
@@ -40,7 +40,7 @@ def main():
     
     ### GENERATE TRAINING SAMPLES (LHS)
     if N_TRAINING > 0:
-        lhd = lhs(len(parameters), samples=N_TRAINING, criterion="center")
+        lhd = lhs(len(parameters), samples=N_TRAINING, criterion= None) # "center")
         print(lhd)
 
         lhd_scaled = np.array(
@@ -70,7 +70,7 @@ def main():
         df_test = df_test.astype(units_dict)
         df_test = df_test.pint.to_base_units().pint.dequantify()
 
-        df_test.to_csv(ROOT / "test_samples.csv", index=False, float_format="%.3e")
+        df_test.to_csv(ROOT / "test_samples.csv", index=False, float_format="%.4e")
         print(df_test)
 
 if __name__ == "__main__":

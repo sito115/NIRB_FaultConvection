@@ -42,13 +42,14 @@ def plot_data(data: np.ndarray, **kwargs):
     title_string = kwargs.pop("title", "")
     export_path : Path = kwargs.pop("export_path", None)
     ax.set_xlabel("Point ID")
-    ax.set_ylabel("Temperature [K]")
+    ax.set_ylabel("Value")
     ax.set_title(title_string)
     ax.grid()
     if export_path is not None:
         assert export_path.parent.exists()
         fig.savefig(export_path)
-    plt.close("all")
+        plt.close(fig)
+        del fig
         
 
 def Q2_metric(test_snapshots : np.ndarray, test_predictions: np.ndarray) -> float:
@@ -182,7 +183,7 @@ def find_snapshot_path(projection: Literal['Mapped', 'Original'],
                        field_name: Literal['Temperature', 'Entropy'],
                        root_data_folder : Path,
                        control_mesh_suffix : str,
-                       data_type: Literal['Training', 'Test']) -> np.ndarray:
+                       data_type: Literal['Training', 'Test']) -> Path:
     
     match projection:
         case"Mapped":
@@ -196,17 +197,14 @@ def find_snapshot_path(projection: Literal['Mapped', 'Original'],
         case "Temperature":
             if 'init' in suffix.lower() and 'grad' in suffix.lower():
                 logging.info(f"Entered {data_type}_Temperature_minus_tgrad.npy")
-                snapshots_npy      = np.load(export_root / f"{data_type}_Temperature_minus_tgrad.npy")
-            elif 'init' in suffix.lower():
-                snapshots_npy      = np.load(export_root / f"{data_type}_Temperature.npy")
-                snapshots_npy  = snapshots_npy -  snapshots_npy[:, 0, :] # last time step
+                path = export_root / f"{data_type}_Temperature_minus_tgrad.npy"
             else:
                 logging.info(f"Entered {data_type}_Temperature.npy")
-                snapshots_npy      = np.load(export_root / f"{data_type}_Temperature.npy")
+                path = export_root / f"{data_type}_Temperature.npy"
         case "Entropy":
-            snapshots_npy      = np.load(export_root / f"{data_type}_entropy_gen_per_vol_thermal.npy")
-
-    return snapshots_npy
+            path      = export_root / f"{data_type}_entropy_gen_per_vol_thermal_log10.npy"
+    assert path.exists(), f"{path}"
+    return path
 
 
 def find_basis_functions(projection: Literal['Mapped', 'Original'],
@@ -219,9 +217,9 @@ def find_basis_functions(projection: Literal['Mapped', 'Original'],
         case "Mapped":
             basis_func_path = root_data_folder / "TrainingMapped" / control_mesh_suffix / f"BasisFunctions{field_name}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
         case "Original":
-            basis_func_path = root_data_folder / "TrainingOriginal" / f"BasisFunctions{field_name}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+            basis_func_path = root_data_folder / f"BasisFunctions{field_name}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
     
-    assert basis_func_path.exists()
+    assert basis_func_path.exists(), f"{basis_func_path}"
     logging.info(f"{basis_func_path=}")
     return np.load(basis_func_path)
     

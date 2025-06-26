@@ -8,13 +8,11 @@ from torch import nn
 import numpy as np
 import sys 
 import logging
-import os
 from datetime import datetime
-from dotenv import load_dotenv
 sys.path.append(str(Path(__file__).parents[1]))
 from src.pod.normalizer import match_scaler
 from src.offline_stage import NirbModule, NirbDataModule, OptunaPruning
-from src.utils import load_pint_data, find_snapshot_path, setup_logger
+from src.utils import load_pint_data, find_snapshot_path, setup_logger, read_config
 
 def objective(trial: optuna.Trial) -> float:
     # Architecture: variable number of layers and neurons per layer
@@ -24,11 +22,11 @@ def objective(trial: optuna.Trial) -> float:
         trial.suggest_int(f"hidden_layers_betw{i}", 50, 300, step=2)
         for i in range(num_inbetw_layers)
     ]
-    hidden6 = trial.suggest_int("hidden6", low = 30,  high = 100 ,step=2)
+    hidden6 = trial.suggest_int("hidden6", low = 50,  high = 150 ,step=2)
     
-    suffix = trial.suggest_categorical("scaler_output", ["mean", "min_max_init_grad"])
+    suffix = trial.suggest_categorical("scaler_output", ["none", "min_max"])
     scaler_features = trial.suggest_categorical("scaler_features", ["standardizer",  "min_max"])
-    accuracy = trial.suggest_categorical("accuracy", [1e-5, 1e-6])
+    accuracy = 1e-5 #trial.suggest_categorical("accuracy", [1e-5, 1e-6])
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 5e-6, 2e-3, log=True)
@@ -53,13 +51,19 @@ def objective(trial: optuna.Trial) -> float:
     assert basis_func_path.exists(), f"Basis function path {basis_func_path} does not exist."
     basis_functions         = np.load(basis_func_path)
     
-    training_snapshots = find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Training")[:, -1, :]
-    test_snapshots = find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Test")[:, -1, :]
- 
+    training_snapshots = np.load(find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Training"))[:, -1, :]
+    test_snapshots     = np.load(find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Test"))[:, -1, :]
+  
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
     training_parameters     = load_pint_data(train_param_path, is_numpy = True)
     test_parameters         = load_pint_data(test_param_path, is_numpy = True)
+    
+    if PARAMETER_SPACE == "09":
+        zero_crossings = np.load(ROOT / "Exports/Training_zero_crossings.npy")
+        mask = zero_crossings != 6
+        training_snapshots = training_snapshots[mask, :] 
+        training_parameters = training_parameters[mask, :]
     
     if PARAMETER_SPACE == "01":
         training_parameters[:, 0] = np.log10(training_parameters[:, 0])
@@ -123,7 +127,7 @@ def objective(trial: optuna.Trial) -> float:
                         logger=logger,
                         callbacks=[optuna_pruning, model_ckpt],
                         enable_progress_bar=False,
-                        max_time={"minutes": 60},
+                        max_time={"minutes": 80},
                         )
     
     # model.basis_functions = data_module.basis_func_mtrx
@@ -146,18 +150,20 @@ def objective(trial: optuna.Trial) -> float:
 
 if __name__ == "__main__":
     setup_logger(is_console=True, level=logging.INFO)
-    N_EPOCHS = 50_000 #100_000 #20_000
-    PROJECTION = "Mapped"  # "Original" or "Mapped"
-    FIELD_NAME = "Temperature"
-    spacing = 50
-    control_mesh_suffix =  f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
-    # ACCURACY = 1e-5
-    # SUFFIX = "min_max_init_grad"
-    PARAMETER_SPACE = "09"
-    ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
+    N_EPOCHS = 90_000 #100_000 #20_000
     STUDY_NAME = "sweep"
-    N_JOBS = 3
-    N_TRIALS = 40
+    N_JOBS = 2
+    N_TRIALS = 50
+    
+    config = read_config()
+    ROOT = config['data_folder']
+    assert ROOT.exists(), f"Not found: {ROOT}"
+    FIELD_NAME = config['field_name']
+    PROJECTION = config['projection']
+    PARAMETER_SPACE = config['parameter_space']
+    control_mesh_suffix =  config['control_mesh_suffix']
+    
+
 
 
     assert ROOT.exists(), f"Not found: {ROOT}"
@@ -183,14 +189,5 @@ if __name__ == "__main__":
                                     n_min_trials=20
                                 ),
                                 **storage_param)
-    
-    study.enqueue_trial({"hidden1": 30,
-                         "hidden6": 80,
-                         "num_inbetw_layers" : 2,
-                         "suffix" : "min_max_init_grad",
-                         "scaler_features": "min_max",
-                         "activation" : "sigmoid",
-                         "lr": 1e-3,
-                         "batch_size": 25})
     
     study.optimize(objective, n_trials=N_TRIALS, n_jobs=N_JOBS)

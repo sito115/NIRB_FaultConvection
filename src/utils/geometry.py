@@ -55,6 +55,7 @@ def map_on_control_mesh(comsol_data : pv.PolyData,
     """Map on control mesh with a vtkProbeFilter
     https://vtk.org/doc/nightly/html/classvtkProbeFilter.html
     https://public.kitware.com/Wiki/Demystifying_the_vtkProbeFilter
+    https://www.scratchapixel.com/lessons/3d-basic-rendering/ray-tracing-rendering-a-triangle/barycentric-coordinates.html
 
     VtkProbeFilter
     For structured datasets (vtkImageData, vtkStructuredGrid), VTK uses trilinear interpolation based on the grid spacing and cell values.

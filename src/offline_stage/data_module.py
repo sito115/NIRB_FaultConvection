@@ -17,7 +17,8 @@ class NirbDataModule():
                  test_snaps: np.ndarray = None,
                  test_param: np.ndarray = None,
                  val_snaps: np.ndarray = None,
-                 val_param: np.ndarray = None):
+                 val_param: np.ndarray = None,
+                 auto_process : bool = True):
         """Data Module for NIRB.
 
         Args:
@@ -29,8 +30,7 @@ class NirbDataModule():
             batch_size (int, optional): _description_. Defaults to 20.
             normalizer (Normalizations): Normalizer for Snapshots. Defaults to MinMaxNormalizer():
         """
-        assert basis_func_mtrx.shape[1] == training_snaps.shape[1]
-        assert training_snaps.shape[0] == training_param.shape[0]
+
         
         self.basis_func_mtrx = basis_func_mtrx 
         self.training_snaps = training_snaps 
@@ -47,8 +47,11 @@ class NirbDataModule():
         self.normalizer = normalizer
         self.scale_outputs()    
 
-        self.compute_coefficients()
-        self.setup_tensor_datasets()
+        if auto_process:
+            assert basis_func_mtrx.shape[1] == training_snaps.shape[1]
+            assert training_snaps.shape[0] == training_param.shape[0]
+            self.compute_coefficients()
+            self.setup_tensor_datasets()
 
     def scale_features(self) -> None:
         if self.standardizer is None:

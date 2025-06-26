@@ -9,7 +9,7 @@ from plotly import graph_objects as go
 from plotly import express as px
 import pyvista as pv
 sys.path.append(str(Path(__file__).parents[1]))
-from src.utils import safe_parse_quantity, setup_logger
+from src.utils import safe_parse_quantity, setup_logger, read_config
 from comsol_module.entropy import caluclate_entropy_gen_number_isotherm, calculate_S_therm
 
 def main():
@@ -21,6 +21,7 @@ def main():
     IS_EXPORT_ENTROPY_NUMBERS = True
     IS_EXPORT_HTML = True
     spacing = 50
+    config = read_config()
     control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
 
     import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}Mapped" / f"{control_mesh_suffix}"
@@ -54,7 +55,7 @@ def main():
         param_df = pd.read_csv(param_files[idx_snap], index_col = 0)
         param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
         lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
-                            param_df.loc['host_phi', "quantity_pint"] * (4.2 * ureg.watt / (ureg.meter * ureg.kelvin))
+                            param_df.loc['host_phi', "quantity_pint"] * (config['lambda_f']  * ureg.watt / (ureg.meter * ureg.kelvin))
         t0      = 0.5 * (param_df.loc["T_h", "quantity_pint"] + param_df.loc["T_c", "quantity_pint"])
         delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
         H =  (ref_mesh.bounds.z_max - ref_mesh.bounds.z_min) * ureg.meter

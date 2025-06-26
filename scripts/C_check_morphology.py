@@ -7,8 +7,8 @@ sys.path.append(str(Path(__file__).parents[1]))
 from comsol_module.comsol_classes import COMSOL_VTU
 
 
-ROOT = Path().cwd()
-PARAMETER_SPACE = "09"
+ROOT = Path(__file__).parents[1]
+PARAMETER_SPACE = "10"
 FIELD_NAME = "Temperature"
 DATA_TYPE = "Test"
 IS_LOAD_NPY : bool = True
@@ -21,7 +21,7 @@ if control_mesh_suffix is None:
     comsol_data = COMSOL_VTU(import_folder / f"{DATA_TYPE}_000.vtu")
 else:
     import_folder = ROOT / "data" / PARAMETER_SPACE / (DATA_TYPE + "Mapped") / control_mesh_suffix / "Exports"
-    assert import_folder.exists()
+    assert import_folder.exists(), f"{import_folder}"
     comsol_data = COMSOL_VTU(import_folder.parent / f"{DATA_TYPE}_000_{control_mesh_suffix}.vtk", is_clean_mesh=False)
 
 export_folder = ROOT / "data" / PARAMETER_SPACE / "Exports" / "Zero-Crossings"

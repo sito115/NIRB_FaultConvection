@@ -204,6 +204,8 @@ def match_scaler(s: str) -> Normalizer:
         scaler = MinMaxNormalizer()
     elif "mean" in s.lower():
         scaler = MeanNormalizer()
+    elif "none" in s.lower():
+        scaler = None
     else:
         raise ValueError(f"Unknown scaler_features: {s}")
     logging.info(f"Selected {scaler}")

@@ -18,7 +18,8 @@ from src.utils import (load_pint_data,
                        safe_parse_quantity,
                        Q2_metric,
                        calculate_thermal_entropy_generation,
-                       find_snapshot_path)
+                       find_snapshot_path,
+                       read_config)
 
 
     
@@ -39,16 +40,19 @@ torch.serialization.add_safe_globals([torch.nn.modules.activation.Tanh,
 
 def main():
 
-    PARAMETER_SPACE = "09"
+    PARAMETER_SPACE = "08"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
     cutoff_datetime = datetime(2025, 6, 5, 15, 0, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
     IS_OVERWRITE = True
-    PROJECTION = "Mapped"  # "Mapped" or "Original"
-    FIELD_NAME = "Temperature" #"Entropy"
-    is_clean_mesh = False
+    PROJECTION = "Original"  # "Mapped" or "Original"
+    FIELD_NAME = "Entropy" #"Entropy"
+    is_clean_mesh = True
+    control_mesh_suffix = None #"s50_50_50_b0_4000_0_5000_-4000_0"
+    config = read_config()
+
     
     chk_pt_paths = sorted([path for path in ROOT.rglob("*.ckpt") if path.stat().st_mtime > cutoff_datetime])
     chk_pt_paths = [s for s in chk_pt_paths if 'zc' not in str(s)]
@@ -57,9 +61,10 @@ def main():
     elif FIELD_NAME == "Entropy":
         chk_pt_paths = [s for s in chk_pt_paths if FIELD_NAME.lower() in str(s).lower()]
 
+    # chk_pt_paths= [Path("/Users/thomassimader/Documents/NIRB/data/09/optuna_logsTemperature/trial_0_20250619-120700/checkpoints/last.ckpt")]
+
     assert len(chk_pt_paths) > 0
     
-    control_mesh_suffix = "s50_50_50_b0_4000_0_5000_-4000_0"
     
     basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" if control_mesh_suffix else ROOT / f"BasisFunctions{FIELD_NAME}"
     basis_functions_folder.exists()
@@ -123,6 +128,7 @@ def main():
         
         
         scaler_features = checkpoint['hyper_parameters'].get('scaler_features', 'Standardizer')
+        logging.info(f"{scaler_features=}")
         
         n_outputs = get_n_outputs(trained_model)
         filtered_basis_df = df_basis_functions.loc[df_basis_functions['n_basis'] == n_outputs]
@@ -179,13 +185,10 @@ def main():
         if result is not None and not IS_OVERWRITE:
             logging.info(f'Skipped {chk_pt_path.name}: Already in database')
             continue
-        
-        
-        training_snapshots_npy = find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Training")
-        test_snapshots_npy = find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Test")
-        training_snapshots  = training_snapshots_npy[:, -1, :]
-        test_snapshots      = test_snapshots_npy[:, -1, :]     
-        del test_snapshots_npy, training_snapshots_npy
+    
+        # last time step
+        training_snapshots = np.load(find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Training"))[:, -1, :]
+        test_snapshots     = np.load(find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT, control_mesh_suffix, "Test"))[:, -1, :]
 
         scaling_output = match_scaler(SUFFIX)
         scaling_features = match_scaler(scaler_features)
@@ -197,7 +200,8 @@ def main():
             training_param=training_parameters,
             test_param=test_parameters,
             normalizer=scaling_output,
-            standardizer_features=scaling_features
+            standardizer_features=scaling_features,
+            batch_size = -1,
         )
         
         param_folder = ROOT / "Exports"
@@ -218,12 +222,13 @@ def main():
             param_df = pd.read_csv(parameters_df_file, index_col = 0)
             param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
             lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
-                                param_df.loc['host_phi', "quantity_pint"] * (4.2 * ureg.watt / (ureg.meter * ureg.kelvin))
+                                param_df.loc['host_phi', "quantity_pint"] * (config['lambda_f']  * ureg.watt / (ureg.meter * ureg.kelvin))
             t0      = 0.5 * (param_df.loc["T_h", "quantity_pint"] + param_df.loc["T_c", "quantity_pint"])
             delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
             param = data_module.test_param_scaled[test_idx]
             param_t = torch.from_numpy(param.astype(np.float32)).view(1, -1) # shape [1, n_param]
             res_np = trained_model(param_t).detach().numpy()
+            logging.debug(f"{res_np=}")
             my_sol_scaled = np.matmul(res_np.flatten(), basis_functions)
             predictions_scaled[test_idx, :] = my_sol_scaled
             
@@ -236,7 +241,10 @@ def main():
             else:
                 test_snap_unscaled = data_module.test_snaps[test_idx]
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
-                            
+                if FIELD_NAME == "Entropy":
+                    prediction_unscaled = np.power(10, prediction_unscaled)
+                    test_snap_unscaled = np.power(10, test_snap_unscaled)
+
             predictions_unscaled[test_idx, :] = prediction_unscaled
             test_solutions_unscaled[test_idx, :] = test_snap_unscaled
             
@@ -290,7 +298,7 @@ def main():
             param_df = pd.read_csv(parameters_df_file, index_col = 0)
             param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
             lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
-                                param_df.loc['host_phi', "quantity_pint"] * (4.2 * ureg.watt / (ureg.meter * ureg.kelvin))
+                                param_df.loc['host_phi', "quantity_pint"] * (config['lambda_f']  * ureg.watt / (ureg.meter * ureg.kelvin))
             t0      = 0.5 * (param_df.loc["T_h", "quantity_pint"] + param_df.loc["T_c", "quantity_pint"])
             delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
             param = data_module.training_param_scaled[train_idx]
@@ -305,16 +313,15 @@ def main():
                 assert np.all(tgrad > 0)
                 train_snap_unscaled = data_module.training_snaps[train_idx] + tgrad
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled) + tgrad
-            elif 'init' in SUFFIX.lower():
-                train_snap_unscaled = data_module.training_snaps[train_idx] + training_snapshots_npy[train_idx, 0, :]
-                prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled) +  training_snapshots_npy[train_idx, 0, :]
             else:
                 train_snap_unscaled = data_module.training_snaps[train_idx]
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
-                
+                if FIELD_NAME == "Entropy":
+                    prediction_unscaled = np.power(10, prediction_unscaled)
+                    train_snap_unscaled = np.power(10, train_snap_unscaled)
+                    
             predictions_unscaled[train_idx, :] = prediction_unscaled
             train_solutions_unscaled[train_idx, :] = train_snap_unscaled
-            
             
             match FIELD_NAME:
                 case "Temperature":
@@ -328,20 +335,18 @@ def main():
 
                 case "Entropy":
                     comsol_data.mesh.point_data['temp_pred'] = prediction_unscaled
-                    comsol_data.mesh.point_data['temp_train'] = train_snap_unscaled
-                    cell_mesh = comsol_data.mesh.point_data_to_cell_data()
-                    s0_pred = cell_mesh.cell_data['temp_pred'] * ureg.watt / (ureg.kelvin * ureg.meter**3)
-                    s0_train = cell_mesh.cell_data['temp_train'] * ureg.watt / (ureg.kelvin * ureg.meter**3)
+                    comsol_data.mesh.point_data['temp_test'] = train_snap_unscaled
+                    integrated = comsol_data.mesh.integrate_data()
+                    s0_total_pred = integrated.point_data['temp_pred'][0] * ureg.watt / ureg.kelvin
+                    s0_total_train = integrated.point_data['temp_test'][0] * ureg.watt / ureg.kelvin
                     
-                    s0_total_pred = np.sum(s0_pred * comsol_data.mesh.compute_cell_sizes()["Volume"] * ureg.meter**3)
-                    s0_total_train = np.sum(s0_train * comsol_data.mesh.compute_cell_sizes()["Volume"] * ureg.meter**3)
                     L = param_df.loc["H", "quantity_pint"]
                     
                     s0_characteristic = (lambda_therm * delta_T**2) / (L**2 * t0**2)
                     entrpy_num_train = s0_total_train / s0_characteristic / (comsol_data.mesh.volume * ureg.meter**3)  
                     entrpy_num_prediction = s0_total_pred / s0_characteristic / (comsol_data.mesh.volume * ureg.meter**3)  
-                    assert entrpy_num_train.check(['dimensionless']) # check for correct unit
-                    assert entrpy_num_prediction.check(['dimensionless']) # check for correct unit 
+                    assert entrpy_num_test.check(['dimensionless']) # check for correct unit
+                    assert entrpy_num_prediction.check(['dimensionless']) # check for correct unit
                    
             entrpy_nums_training[train_idx] = entrpy_num_train.magnitude
             entrpy_nums_prediction[train_idx] = entrpy_num_prediction.magnitude
@@ -387,6 +392,11 @@ def main():
         conn.commit()
         conn.close()
 
+        logging.info(f"{q2_scaled=:.3e}")
+        logging.info(f"{r2_scaled=:.3e}")
+        logging.info(f"{entropy_corr_coeff_test=:.1%}")
+        logging.info(f"{entropy_corr_coeff_train=:.1%}")
+        logging.info(f"{entropy_mse_test=:.1e}")
 
 if __name__ == "__main__":
     setup_logger(is_console=True, log_file=Path(__file__).parent / 'E_quality.log', level = logging.INFO)

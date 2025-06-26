@@ -25,17 +25,17 @@ def main():
     """    
     IS_EXPORT_MP4 = True           # Export MP4 movies
     EXPORT_FIELD = "Temperature" #"Total_Darcy_velocity_magnitude"   # Which field to save 
-    IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
+    IS_EXPORT_NPY = False           # export fields as npy, to use when n_points are the SAME for all vtu files
     IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "09"
+    PARAMETER_SPACE = "10"
     DATA_TYPE = "Training"
-    PROJECTION = "Mapped" #"Mapped"
+    PROJECTION = "Original" #"Mapped"
 
     data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}{PROJECTION}"
-    export_folder = Path().cwd() / f"data/{PARAMETER_SPACE}/Exports"
+    export_folder = ROOT / "data" / PARAMETER_SPACE / "Exports"
     if PROJECTION == "Mapped":
         spacing = 50
         control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
@@ -48,14 +48,16 @@ def main():
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti", ".vtk"] and DATA_TYPE.lower() in path.stem.lower())])
     assert len(vtu_files) > 0
     is_clean_mesh = not(any(path.suffix == ".vtk" for path in vtu_files))
-    N_SNAPS = len(vtu_files)
+    
 
     parameter_file = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv"
     assert parameter_file.exists()
     pint_parameters_df = load_pint_data(parameter_file)
-    assert len(pint_parameters_df) == N_SNAPS 
     free_parameter_names = pint_parameters_df.columns
-    
+         
+    N_SNAPS = len(vtu_files)
+    assert len(pint_parameters_df) == N_SNAPS 
+
     # extract time steps and points from first simulation
     sim_times = np.zeros((N_SNAPS, ))
     reference_comsol_mesh = COMSOL_VTU(vtu_files[0], is_clean_mesh=is_clean_mesh)
@@ -72,6 +74,7 @@ def main():
     
     for _ , vtu_file in tqdm(enumerate(vtu_files), total=len(vtu_files), desc="Reading COMSOL files"):
         idx = int(vtu_file.stem.split("_")[1])
+        print(f"{idx=:03d}")
         comsol_data = COMSOL_VTU(vtu_file, is_clean_mesh=is_clean_mesh)
         sim_time = comsol_data.mesh.field_data['SimTime'][0]
         sim_times[idx] = sim_time

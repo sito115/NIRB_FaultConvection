@@ -8,7 +8,7 @@ import sys
 from plotly import graph_objects as go
 from plotly import express as px
 sys.path.append(str(Path(__file__).parents[1]))
-from src.utils import safe_parse_quantity, setup_logger
+from src.utils import safe_parse_quantity, setup_logger, read_config
 from comsol_module.comsol_classes import COMSOL_VTU
 from comsol_module.entropy import caluclate_entropy_gen_number_isotherm
 
@@ -16,15 +16,16 @@ from comsol_module.entropy import caluclate_entropy_gen_number_isotherm
 def main():
 
     ROOT = Path(__file__).parents[1] 
-    PARAMETER_SPACE = "09"
-    DATA_TYPE = "Training"
+    PARAMETER_SPACE = "10"
+    DATA_TYPE = "Test"
     IS_EXPORT_ARRAY = False
     IS_EXPORT_ENTROPY_NUMBERS = True
     IS_EXPORT_HTML = True
-    PROJECTION = "Mapped"
+    PROJECTION = "Original"
     spacing = 50
     control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
     is_clean = False
+    config = read_config()
 
     import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}{PROJECTION}"
     export_folder = import_folder
@@ -56,7 +57,7 @@ def main():
         param_df = pd.read_csv(param_files[idx_snap], index_col = 0)
         param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
         lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
-                            param_df.loc['host_phi', "quantity_pint"] * (4.2 * ureg.watt / (ureg.meter * ureg.kelvin))
+                            param_df.loc['host_phi', "quantity_pint"] * (config['lambda_f']  * ureg.watt / (ureg.meter * ureg.kelvin))
         t0      = 0.5 * (param_df.loc["T_h", "quantity_pint"] + param_df.loc["T_c", "quantity_pint"])
         delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
         
@@ -68,13 +69,14 @@ def main():
             'delta_T' : delta_T.magnitude,
             'H' : comsol_data.mesh.bounds.z_max - comsol_data.mesh.bounds.z_min,
         }
-                
-        entropy_per_vol = comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
-                                                                        time_steps=TIME_STEPS,
-                                                                        is_return_as_integration=False)
         
-        entropy_gen_per_vol_thermal[idx_snap, :, :] = entropy_per_vol[:, : , 0]  # thermal entropy generation per volume
-        entropy_gen_per_vol_visc[idx_snap, :, :] = entropy_per_vol[:, : , 1]
+        if IS_EXPORT_ARRAY:
+            entropy_per_vol = comsol_data.calculate_total_entropy_per_vol(model_data=model_dict,
+                                                                            time_steps=TIME_STEPS,
+                                                                            is_return_as_integration=False)
+            
+            entropy_gen_per_vol_thermal[idx_snap, :, :] = entropy_per_vol[:, : , 0]  # thermal entropy generation per volume
+            entropy_gen_per_vol_visc[idx_snap, :, :] = entropy_per_vol[:, : , 1]
     
     
         

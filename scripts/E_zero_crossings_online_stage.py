@@ -15,7 +15,7 @@ from comsol_module import COMSOL_VTU
 from src.utils import (load_pint_data,
                        setup_logger,
                        safe_parse_quantity,
-                       Q2_metric,
+                       read_config,
                        calculate_thermal_entropy_generation)
 
 
@@ -28,6 +28,7 @@ def main():
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
     FIELD_NAME = "EntropyNum" #Temperature
     IS_OVERWRITE = True
+    config = read_config()
     PROJECTION = "Mapped"  # "Mapped" or "Original"
     control_mesh_suffix = "s100_100_100_b0_4000_0_5000_-4000_0"
     col_index = 1
@@ -168,7 +169,7 @@ def main():
             param_df = pd.read_csv(parameters_df_file, index_col = 0)
             param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
             lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
-                                param_df.loc['host_phi', "quantity_pint"] * (4.2 * ureg.watt / (ureg.meter * ureg.kelvin))
+                                param_df.loc['host_phi', "quantity_pint"] * (config['lambda_f']  * ureg.watt / (ureg.meter * ureg.kelvin))
             t0      = 0.5 * (param_df.loc["T_h", "quantity_pint"] + param_df.loc["T_c", "quantity_pint"])
             delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
             param = test_param_scaled
@@ -234,7 +235,7 @@ def main():
                     param_df = pd.read_csv(parameters_df_file, index_col = 0)
                     param_df['quantity_pint'] = param_df[param_df.columns[-1]].apply(lambda x : safe_parse_quantity(x))
                     lambda_therm = (1 - param_df.loc['host_phi', "quantity_pint"]) * param_df.loc['host_lambda', "quantity_pint"] + \
-                                        param_df.loc['host_phi', "quantity_pint"] * (4.2 * ureg.watt / (ureg.meter * ureg.kelvin))
+                                        param_df.loc['host_phi', "quantity_pint"] * (config['lambda_f']  * ureg.watt / (ureg.meter * ureg.kelvin))
                     t0      = 0.5 * (param_df.loc["T_h", "quantity_pint"] + param_df.loc["T_c", "quantity_pint"])
                     delta_T = (param_df.loc['T_h', "quantity_pint"]  - param_df.loc["T_c", "quantity_pint"])
                     param = train_param_scaled

@@ -20,8 +20,8 @@ dependencies = [
     "comsol-module",
     "mph",
     "torch>=2.7.1",
-    "sqlalchemy>=2.0.41",
-    "mysql-connector-python>=9.3.0",
+    "lightning>=2.5.1.post0",
+    "tensorboard>=2.19.0",
 ]
 
 [project.optional-dependencies]

@@ -8,11 +8,11 @@ from src.utils import CONFIG_PATH, read_config
 def create_config():
     config = configparser.ConfigParser()
 
-    spacing = 50
+    spacing = 100
     # Add sections and key-value pairs
     config['General'] = {'log_level': logging.DEBUG,
-                         'parameter_space': '09',
-                         'field_name': 'Entropy',
+                         'parameter_space': '10',
+                         'field_name': 'Temperature',
                          'projection': 'Mapped',
                          'is_clean_mesh': False,
                          'root': Path(__file__).parents[1],

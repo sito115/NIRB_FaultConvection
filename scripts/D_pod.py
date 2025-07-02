@@ -5,6 +5,7 @@ The script exports the basis functions, the energy of each basis function, and t
 """
 import numpy as np
 from pathlib import Path
+import matplotlib.pyplot as plt
 import logging
 import sys
 sys.path.append(str(Path(__file__).parents[1]))
@@ -14,19 +15,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 if __name__ == "__main__":
-    PARAMETER_SPACE = "09"
+    PARAMETER_SPACE = "10"
     ROOT = Path(__file__).parents[1]
     DATA_TYPE = "Training"
     ACCURACY = 1e-5
     IS_EXPORT = True
     FIELD_NAME = "Entropy"
-    SUFFIX = "standard" #"min_max"
+    SUFFIX = "mean" #"min_max"
     PROJECTION = "Mapped" #"Mapped"
-    spacing = 50
+    spacing = 100
     control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
     
     import_path = find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT / "data" / PARAMETER_SPACE, control_mesh_suffix, "Training")
-
+    logging.info(f"{import_path=}")
     export_folder = import_path.parent.parent.joinpath(f"BasisFunctions{FIELD_NAME}")
     export_folder.mkdir(exist_ok=True)
     assert export_folder.exists(), f"Export folder {export_folder} does not exist."
@@ -44,15 +45,26 @@ if __name__ == "__main__":
         for idx in [41, 62, 87]:
             snapshots[idx, -1, :] = snapshots[idx, 10, :]
 
-    if PARAMETER_SPACE == "09":
+    if PARAMETER_SPACE in ["09"]:
         zero_crossings = np.load(ROOT / f"data/{PARAMETER_SPACE}/Exports/Training_zero_crossings.npy")
         mask = zero_crossings != 6
         snapshots = snapshots[mask, :, :]
         
     data_set = snapshots[:, -1, :]
     logging.info(f"Shape of data set is {data_set.shape}")
-
-
+    # Compute histogram
+    hist, bin_edges = np.histogram(data_set.flatten(), bins = 50)
+    # Plot it
+    plt.figure(figsize=(6, 4))
+    plt.bar(bin_edges[:-1], hist, width=np.diff(bin_edges), edgecolor='black', align='edge')
+    plt.xlabel(f'PS{PARAMETER_SPACE} - {FIELD_NAME}')
+    plt.ylabel('Frequency')
+    plt.title('Histogram')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(export_folder / f"Histogram_PS{PARAMETER_SPACE} - {FIELD_NAME}.png")
+    
+    
     normalizer = match_scaler(SUFFIX)
     logging.info(f"{normalizer=}")
     if normalizer is not None:

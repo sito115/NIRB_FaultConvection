@@ -14,23 +14,34 @@ from src.pod.normalizer import match_scaler
 from src.offline_stage import NirbModule, NirbDataModule, OptunaPruning
 from src.utils import load_pint_data, find_snapshot_path, setup_logger, read_config
 
-def objective(trial: optuna.Trial) -> float:
+def objective(trial: optuna.Trial, zero_crossing: int) -> float:
     # Architecture: variable number of layers and neurons per layer
-    hidden1 = trial.suggest_int("hidden1", low = 2, high = 100)
+    
+    
+    zero_crossings_train = np.load(ROOT / "Exports" / "Training_zero_crossings.npy")
+    zero_crossings_test = np.load(ROOT / "Exports" / "Test_zero_crossings.npy")
+    zc_train_mask = zero_crossings_train == zero_crossing
+    zc_test_mask = zero_crossings_test == zero_crossing
+    assert np.sum(zc_train_mask) > 0
+    assert np.sum(zc_test_mask) > 0
+    logging.info(f"{np.sum(zc_train_mask)=}{np.sum(zc_test_mask)=}")
+    
+    
+    hidden1 = trial.suggest_int("hidden1", low = 2, high = 200)
     num_inbetw_layers = trial.suggest_int("num_inbetw_layers", 1, 4)
     hidden_layers_betw = [
-        trial.suggest_int(f"hidden_layers_betw{i}", 50, 300, step=2)
+        trial.suggest_int(f"hidden_layers_betw{i}", 50, 250, step=2)
         for i in range(num_inbetw_layers)
     ]
-    hidden6 = trial.suggest_int("hidden6", low = 50,  high = 150 ,step=2)
+    hidden6 = trial.suggest_int("hidden6", low = 50,  high = 200 ,step=2)
     
-    suffix = 'none' #trial.suggest_categorical("scaler_output", ["mean", "min_max_init_grad"])
+    suffix = trial.suggest_categorical("scaler_output", ["mean", "min_max_init_grad", "min_max"])
     scaler_features = trial.suggest_categorical("scaler_features", ["standardizer",  "min_max"])
-    accuracy = 1e-5 #trial.suggest_categorical("accuracy", [1e-5, 1e-6])
+    accuracy = trial.suggest_categorical("accuracy", [1e-5, 1e-6])
     
     # Other hyperparameters
     lr = trial.suggest_float("lr", 5e-6, 2e-3, log=True)
-    batch_size = trial.suggest_int("batch_size", 15 , 150)
+    batch_size = trial.suggest_int("batch_size", 10 , len(zero_crossings_train))
 
     activation_name = trial.suggest_categorical("activation", ["sigmoid", "leaky_relu", "tanh"])
     if activation_name == "leaky_relu":
@@ -43,31 +54,20 @@ def objective(trial: optuna.Trial) -> float:
         activation_fn = nn.Tanh()
 
     if PROJECTION == "Mapped":
-        basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
+        basis_func_path = ROOT / "TrainingMapped" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}ZeroCrossings" / f"basis_fts_matrix_{FIELD_NAME}_{accuracy:.1e}{suffix}_zc{zero_crossing:02d}.npy"
     else:
-        basis_func_path = ROOT / f"BasisFunctions{FIELD_NAME}" / f"basis_fts_matrix_{accuracy:.1e}{suffix}.npy"
-
+        basis_func_path = ROOT / f"BasisFunctions{FIELD_NAME}ZeroCrossings" / f"basis_fts_matrix_{FIELD_NAME}_{accuracy:.1e}{suffix}_{zero_crossing:02d}.npy"
 
     assert basis_func_path.exists(), f"Basis function path {basis_func_path} does not exist."
     basis_functions         = np.load(basis_func_path)
     
-    training_snapshots = np.load(find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Training"))[:, -1, :]
-    test_snapshots     = np.load(find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Test"))[:, -1, :]
+    training_snapshots = np.load(find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Training"))[zc_train_mask, -1, :]
+    test_snapshots     = np.load(find_snapshot_path(PROJECTION, suffix, FIELD_NAME, ROOT, control_mesh_suffix, "Test"))[zc_test_mask, -1, :]
   
     train_param_path = ROOT / "training_samples.csv"
     test_param_path = ROOT / "test_samples.csv"
-    training_parameters     = load_pint_data(train_param_path, is_numpy = True)
-    test_parameters         = load_pint_data(test_param_path, is_numpy = True)
-    
-    if PARAMETER_SPACE == "09":
-        zero_crossings = np.load(ROOT / "Exports/Training_zero_crossings.npy")
-        mask = zero_crossings != 6
-        training_snapshots = training_snapshots[mask, :] 
-        training_parameters = training_parameters[mask, :]
-    
-    if PARAMETER_SPACE == "01":
-        training_parameters[:, 0] = np.log10(training_parameters[:, 0])
-        test_parameters[:, 0] = np.log10(test_parameters[:, 0])
+    training_parameters     = load_pint_data(train_param_path, is_numpy = True)[zc_train_mask, :]
+    test_parameters         = load_pint_data(test_param_path, is_numpy = True)[zc_test_mask, :]  
     
     assert len(training_snapshots) == len(training_parameters)
     # Prepare data
@@ -117,11 +117,12 @@ def objective(trial: optuna.Trial) -> float:
             every_n_train_steps = 500
         )
 
-    logger_dir_name = f"optuna_logs{FIELD_NAME}"
+    logger_dir_name = f"optuna_logs{FIELD_NAME}_zero_crossing"
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     logger = TensorBoardLogger(ROOT, name=logger_dir_name,
-                               version=f"trial_{trial.number}_{timestamp}",
+                               version=f"trial_{trial.number}_{timestamp}_zc{zero_crossing:02d}",
                                default_hp_metric=False)
+    
     trainer = L.Trainer(max_epochs=N_EPOCHS,
                         enable_checkpointing=True,
                         logger=logger,
@@ -151,9 +152,10 @@ def objective(trial: optuna.Trial) -> float:
 if __name__ == "__main__":
     setup_logger(is_console=True, level=logging.INFO)
     N_EPOCHS = 50_000 #100_000 #20_000
-    STUDY_NAME = "sweep_none_scaling"
-    N_JOBS = 2
+    STUDY_NAME = "sweep"
+    N_JOBS = 1
     N_TRIALS = 50
+    ZERO_CROSSING = 4
     
     config = read_config()
     ROOT = config['data_folder']
@@ -163,17 +165,8 @@ if __name__ == "__main__":
     PARAMETER_SPACE = config['parameter_space']
     control_mesh_suffix =  config['control_mesh_suffix']
     
-
-
-
     assert ROOT.exists(), f"Not found: {ROOT}"
-    # db_name = f"PS{PARAMETER_SPACE}_Optuna_{FIELD_NAME}" 
-    # load_dotenv()
-    # storage_param = {
-    #     "storage": f"mysql+mysqlconnector://tsimader:{os.getenv("TSIMADER_SQL_PASSWORD")}@localhost/{db_name}",
-    #     "study_name": STUDY_NAME,
-    #     "load_if_exists": True
-    # }
+
     db_path = ROOT / f"optuna_db{FIELD_NAME}.sqlite3" 
     storage_param = {
         "storage": f"sqlite:///{db_path}",  # Specify the storage URL here.
@@ -190,4 +183,4 @@ if __name__ == "__main__":
                                 ),
                                 **storage_param)
     
-    study.optimize(objective, n_trials=N_TRIALS, n_jobs=N_JOBS)
+    study.optimize(lambda trial: objective(trial, ZERO_CROSSING), n_trials=N_TRIALS, n_jobs=N_JOBS)

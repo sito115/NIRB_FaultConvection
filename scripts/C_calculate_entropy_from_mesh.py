@@ -17,14 +17,14 @@ def main():
 
     ROOT = Path(__file__).parents[1] 
     PARAMETER_SPACE = "10"
-    DATA_TYPE = "Test"
+    DATA_TYPE = "Training"
     IS_EXPORT_ARRAY = False
     IS_EXPORT_ENTROPY_NUMBERS = True
     IS_EXPORT_HTML = True
     PROJECTION = "Original"
     spacing = 50
     control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
-    is_clean = False
+    is_clean = True
     config = read_config()
 
     import_folder = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE}{PROJECTION}"
@@ -106,7 +106,8 @@ def main():
         np.save(export_folder /f"{DATA_TYPE}_entropy_gen_number_visc.npy", entropy_gen_number_visc)
     if IS_EXPORT_ARRAY:
         np.save(export_folder /f"{DATA_TYPE}_entropy_gen_per_vol_thermal.npy", entropy_gen_per_vol_thermal)
-        np.save(export_folder /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
+        np.save(export_folder /f"{DATA_TYPE}_entropy_gen_per_vol_thermal_log10.npy", np.log10(entropy_gen_per_vol_thermal))
+        # np.save(export_folder /f"{DATA_TYPE}_entropy_gen_per_vol_visc.npy", entropy_gen_per_vol_thermal)
 
     fig = go.Figure()
     colors = px.colors.sample_colorscale("jet", [n/(N_SNAPS) for n in range(N_SNAPS)])

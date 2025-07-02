@@ -12,7 +12,7 @@ from src.utils import (create_control_mesh,
                        delete_comsol_fields,
                        inverse_distance_weighting,
                        setup_logger)
-from comsol_module import COMSOL_VTU
+from comsol_module import COMSOL_VTU, read_comsol_fields, ComsolKeyNames
 
 
 def handle_invalid_point_mask(target_point: np.ndarray,
@@ -34,11 +34,11 @@ def handle_invalid_point_mask(target_point: np.ndarray,
 
 def main():   
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "10"
-    DATA_TYPE = "Test"
+    PARAMETER_SPACE = "09"
+    DATA_TYPE = "Training"
     FIELD_TO_EXPORT : str = "Temperature"
     SPACING = (50, 50, 50) # dx, dy, dz
-    DECIMAL_TOLERANCE =  2 # for assertation of min max values afterwards
+    DECIMAL_TOLERANCE =  1 # for assertation of min max values afterwards
     FILE_SUFFIX = 'vtk'
 
     data_folder = Path(ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}Original") # data_type) #"Truncated") # data_type)    
@@ -79,20 +79,31 @@ def main():
 
     for vtu_path in vtu_files:
         logging.debug(f"Mapping {vtu_path.name}")
-        comsol_data = COMSOL_VTU(vtu_path)
+        comsol_data = COMSOL_VTU(vtu_path, is_clean_mesh=True)
         
         # Delete fields of no interest to reduce file size after interpolation
         comsol_data = delete_comsol_fields(comsol_data, [FIELD_TO_EXPORT])
         
         for i in range(len(comsol_data.times) - 1): # delete every time step except last one (-1)
             comsol_data.mesh.point_data.remove(comsol_data.format_field(FIELD_TO_EXPORT, i))
-            
+    
+        # Re-Evaluate exported fields and time steps
+        time_pattern = r"@_t=([\d.]+(?:[Ee][+-]?\d+)?)" # find exported time steps
+        field_pattern = r"^(.*?)_@_t"                    # find exported fields
+        comsol_data.exported_fields, comsol_data.times = read_comsol_fields(comsol_data.mesh, field_pattern, time_pattern)
+
+        for key in comsol_data.times.keys():
+            field_name = comsol_data.format_field(ComsolKeyNames.T_grad_L2, key)
+            deriv = comsol_data.mesh.compute_derivative(scalars=comsol_data.format_field("Temperature", key), preference = 'point')
+            comsol_data.mesh.point_data[field_name] = np.linalg.norm(deriv.point_data['gradient'], axis = 1)
+        
         mapped : pv.ImageData = map_on_control_mesh(comsol_data.mesh, control_mesh)
         
         validity_array = mapped.point_data['vtkValidPointMask']  
         invalid_indices = np.where(validity_array == 0)[0]
         if invalid_indices.size > 0:
             logging.warning(f"\t Found {invalid_indices.size} invalid points in of {vtu_path.name}")
+            logging.warning(f"Invalid Original indices {invalid_indices=}")
             for field_name in comsol_data.mesh.point_data.keys():
                 if field_name == "vtkValidPointMask":
                     continue

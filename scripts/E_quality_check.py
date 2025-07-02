@@ -40,17 +40,18 @@ torch.serialization.add_safe_globals([torch.nn.modules.activation.Tanh,
 
 def main():
 
-    PARAMETER_SPACE = "08"
+    PARAMETER_SPACE = "10"
     ROOT = Path(__file__).parents[1] / "data" / PARAMETER_SPACE
     assert ROOT.exists()
     ureg = pint.get_application_registry()
     cutoff_datetime = datetime(2025, 6, 5, 15, 0, 0).timestamp()
     PATTERN = r"(\d+\.\d+e[+-]?\d+)(.*)"
-    IS_OVERWRITE = True
-    PROJECTION = "Original"  # "Mapped" or "Original"
+    IS_OVERWRITE = False
+    PROJECTION = "Mapped"  # "Mapped" or "Original"
     FIELD_NAME = "Entropy" #"Entropy"
-    is_clean_mesh = True
-    control_mesh_suffix = None #"s50_50_50_b0_4000_0_5000_-4000_0"
+    is_clean_mesh = False
+    spacing = 100
+    control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
     config = read_config()
 
     
@@ -63,7 +64,7 @@ def main():
 
     # chk_pt_paths= [Path("/Users/thomassimader/Documents/NIRB/data/09/optuna_logsTemperature/trial_0_20250619-120700/checkpoints/last.ckpt")]
 
-    assert len(chk_pt_paths) > 0
+    # assert len(chk_pt_paths) > 0
     
     
     basis_functions_folder = ROOT / f"Training{PROJECTION}" / control_mesh_suffix / f"BasisFunctions{FIELD_NAME}" if control_mesh_suffix else ROOT / f"BasisFunctions{FIELD_NAME}"
@@ -107,7 +108,6 @@ def main():
         comsol_data = COMSOL_VTU(ROOT / "TrainingOriginal" / "Training_000.vtu", is_clean_mesh=is_clean_mesh)
     comsol_data.mesh.clear_data()
 
-
     for chk_pt_path in tqdm(chk_pt_paths, total=len(chk_pt_paths)):
         logging.info(chk_pt_path.relative_to(chk_pt_path.parents[2]))
         version = chk_pt_path.parent.parent.stem
@@ -123,10 +123,10 @@ def main():
         trained_model = trained_model.to('cpu')
         trained_model.eval()
         checkpoint = torch.load(chk_pt_path, map_location='cpu')
+        
+        
         epoch = checkpoint.get('epoch', None)
         global_step = checkpoint.get('global_step', None)
-        
-        
         scaler_features = checkpoint['hyper_parameters'].get('scaler_features', 'Standardizer')
         logging.info(f"{scaler_features=}")
         
@@ -193,20 +193,29 @@ def main():
         scaling_output = match_scaler(SUFFIX)
         scaling_features = match_scaler(scaler_features)
         
+        param_folder = ROOT / "Exports"
+        param_files_test  = np.array(sorted([file for file in param_folder.rglob("*.csv") if "test" in file.stem.lower()]))
+        param_files_train = np.array(sorted([file for file in param_folder.rglob("*.csv") if "train" in file.stem.lower()]))
+        
+        target_date = datetime(2025, 6, 25).timestamp()
+        if PARAMETER_SPACE == "09" and FIELD_NAME == "Entropy" and chk_pt_path.stat().st_mtime > target_date:
+            zero_crossings = np.load(ROOT / "Exports/Training_zero_crossings.npy")
+            mask = zero_crossings != 6
+        else:
+            mask = np.ones(len(training_snapshots), dtype=bool)
+        
         data_module = NirbDataModule(
             basis_func_mtrx=basis_functions,
-            training_snaps=training_snapshots,
+            training_snaps=training_snapshots[mask, :],
             test_snaps=test_snapshots,
-            training_param=training_parameters,
+            training_param=training_parameters[mask, :],
             test_param=test_parameters,
             normalizer=scaling_output,
             standardizer_features=scaling_features,
             batch_size = -1,
         )
         
-        param_folder = ROOT / "Exports"
-        param_files_test = sorted([file for file in param_folder.rglob("*.csv") if "test" in file.stem.lower()])
-        param_files_train = sorted([file for file in param_folder.rglob("*.csv") if "train" in file.stem.lower()])
+        param_files_train = param_files_train[mask]
         assert len(param_files_test) == len(data_module.test_snaps)
         assert len(param_files_train) == len(data_module.training_snaps)
 
@@ -240,7 +249,11 @@ def main():
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled) + tgrad
             else:
                 test_snap_unscaled = data_module.test_snaps[test_idx]
-                prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
+                if data_module.normalizer is None:
+                    prediction_unscaled = my_sol_scaled
+                else:
+                    prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
+                
                 if FIELD_NAME == "Entropy":
                     prediction_unscaled = np.power(10, prediction_unscaled)
                     test_snap_unscaled = np.power(10, test_snap_unscaled)
@@ -315,7 +328,11 @@ def main():
                 prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled) + tgrad
             else:
                 train_snap_unscaled = data_module.training_snaps[train_idx]
-                prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
+                if data_module.normalizer is None:
+                    prediction_unscaled = my_sol_scaled
+                else:
+                    prediction_unscaled = data_module.normalizer.inverse_normalize(my_sol_scaled)
+                
                 if FIELD_NAME == "Entropy":
                     prediction_unscaled = np.power(10, prediction_unscaled)
                     train_snap_unscaled = np.power(10, train_snap_unscaled)

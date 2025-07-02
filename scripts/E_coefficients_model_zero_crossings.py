@@ -24,10 +24,10 @@ from src.pod.normalizer import match_scaler
 
 def main():
     seed_everything(42) 
-    IS_RUN_OPTUNA = True
+    IS_RUN_OPTUNA = False
     K_BEST_TRIALS = 3
     N_DEVICES = 3
-    N_EPOCHS = 150_000 
+    N_EPOCHS = 100_000 
     
     ### config
     config = read_config()
@@ -54,9 +54,9 @@ def main():
             'params_batch_size' : 15,
             'params_lr': 1e-3,
             'params_scaler_output': 'min_max', ##'min_max_init_grad',
-            'params_scaler_features': 'standard', ##'min_max_init_grad',
+            'params_scaler_features': 'min_max', ##'min_max_init_grad',
             'params_activation': 'sigmoid',
-            'layers' : [15, 30, 50, 30]
+            'layers' : [15, 50, 50, 30]
 
         }
         
@@ -112,11 +112,9 @@ def main():
 
         scaling_output = match_scaler(SUFFIX)
         print(f"Selected {scaling_output}") 
-
-
-        scaling_output = match_scaler(SUFFIX)
+        
         params_scaler_features = match_scaler(row.params_scaler_features)
-
+        print(f"Selected {params_scaler_features}") 
         training_parameters_scaled = params_scaler_features.normalize(training_parameters)
         test_parameters_scaled = params_scaler_features.normalize_reuse_param(training_parameters)
 
@@ -133,17 +131,19 @@ def main():
 
         basis_func_paths = sorted([path for path in basis_func_folder.rglob(f"basis_fts_matrix_{FIELD_NAME}_{ACCURACY:.1e}{SUFFIX}_zc*.npy")])
         # - 1 because we do not have a basis function for the zero crossing 0, it is inclued in all others.
-        assert len(basis_func_paths) == len(unique_zc) - 1, f"Number of basis function files {len(basis_func_paths)} does not match number of unique zero crossings {len(unique_zc)}."
+        assert len(basis_func_paths) == len(unique_zc[unique_zc != 0]), f"Number of basis function files {len(basis_func_paths)} does not match number of unique zero crossings {len(unique_zc)}."
         
         for basis_func_path in basis_func_paths:
             basis_functions = np.load(basis_func_path)
             zc = int(basis_func_path.stem.split("_")[-1][2:])
+            if zc != 4:
+                continue
             logging.info(f"Processing zero crossing {zc} with basis function path {basis_func_path}.")
             assert zc in unique_zc, f"Zero crossing {zc} not found in unique zero crossings."
             indices_train = grouped_zc_train.get(zc, [])
-            indices_with_0_zc_train = np.append(indices_train, grouped_zc_train.get(0, []))
+            indices_with_0_zc_train = np.append(indices_train, grouped_zc_train.get(0, [])).astype(np.int16)
             indices_test = grouped_zc_test.get(zc, [])
-            indices_with_0_zc_test = np.append(indices_test, grouped_zc_test.get(0, []))
+            indices_with_0_zc_test = np.append(indices_test, grouped_zc_test.get(0, [])).astype(np.int16)
             
             
             training_snapshots_scaled_perzc = scaling_output.normalize(training_snapshots[indices_with_0_zc_train])

@@ -12,7 +12,7 @@ from tqdm import tqdm
 import sys
 from joblib import dump 
 sys.path.append(str(Path(__file__).parents[1]))
-from comsol_module.comsol_classes import COMSOL_VTU
+from comsol_module.comsol_classes import COMSOL_VTU, ComsolKeyNames
 from comsol_module.helper import calculate_normal
 from src.utils import (load_pint_data,
                        format_quantity,
@@ -23,19 +23,19 @@ def main():
     """Extract "EXPORT_FIELD" from  multiple vtu-Files and save it as npy-File.
     Optionally create mp4 movies of simulations. 
     """    
-    IS_EXPORT_MP4 = True           # Export MP4 movies
-    EXPORT_FIELD = "Temperature" #"Total_Darcy_velocity_magnitude"   # Which field to save 
-    IS_EXPORT_NPY = False           # export fields as npy, to use when n_points are the SAME for all vtu files
+    IS_EXPORT_MP4 = False           # Export MP4 movies
+    EXPORT_FIELD = ComsolKeyNames.T_grad_L2
+    IS_EXPORT_NPY = True           # export fields as npy, to use when n_points are the SAME for all vtu files
     IS_EXPORT_JOBLIB = False       # export fields as joblib, to use n_points are DIFFERENT for all vtu files 
     IS_EXPORT_DF = False           # export parameters in mesh.field_data as csv
     
     ROOT = Path(__file__).parents[1]
-    PARAMETER_SPACE = "10"
+    PARAMETER_SPACE = "09"
     DATA_TYPE = "Training"
-    PROJECTION = "Original" #"Mapped"
+    PROJECTION = "Mapped" #"Mapped"
 
     data_folder = ROOT / "data" / PARAMETER_SPACE /  f"{DATA_TYPE}{PROJECTION}"
-    export_folder = ROOT / "data" / PARAMETER_SPACE / "Exports"
+    export_folder = data_folder #ROOT / "data" / PARAMETER_SPACE / "Exports"
     if PROJECTION == "Mapped":
         spacing = 50
         control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
@@ -48,7 +48,6 @@ def main():
     vtu_files = sorted([path for path in data_folder.iterdir() if (path.suffix in [".vtu", ".vti", ".vtk"] and DATA_TYPE.lower() in path.stem.lower())])
     assert len(vtu_files) > 0
     is_clean_mesh = not(any(path.suffix == ".vtk" for path in vtu_files))
-    
 
     parameter_file = ROOT / "data" / PARAMETER_SPACE / f"{DATA_TYPE.lower()}_samples.csv"
     assert parameter_file.exists()
@@ -108,14 +107,15 @@ def main():
             kwargs={'normal' : -np.array(normal),
                 'origin' : comsol_data.mesh.center,
                 'movie_field' : EXPORT_FIELD + "-T0",
-                'is_diff' : True,
+                'is_diff' : False,
                 'is_ind_cmap':True,
                 'param_string' : param_string,
                 'plot_last_frame' : True,
                 'title_string' : f"{DATA_TYPE} {idx:03d} - ",
+                'is_log': True,
                 't_grad': {'t0': t_c,
                           't_grad': t_grad}}
-            comsol_data.export_mp4_movie(field='Temperature',
+            comsol_data.export_mp4_movie(field=EXPORT_FIELD,
                                         mp4_file=export_folder / f"{comsol_data.vtu_path.stem}_{EXPORT_FIELD}_diff_{kwargs['is_diff']:d}.mp4",
                                         **kwargs)
             
@@ -146,7 +146,8 @@ def main():
 
     if IS_EXPORT_NPY:
         np.save(export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}.npy", export_array)
-        np.save(export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}_minus_tgrad.npy", temperatures_diff )
+        if EXPORT_FIELD == "Temperature":
+            np.save(export_folder / f"{DATA_TYPE}_{EXPORT_FIELD}_minus_tgrad.npy", temperatures_diff )
         total_size = sum(file.stat().st_size for file in export_folder.iterdir() if file.suffix == ".npy")  / (1024 * 1024)
         print(f"Total size of all mapped .vti files: {total_size} MB")
         

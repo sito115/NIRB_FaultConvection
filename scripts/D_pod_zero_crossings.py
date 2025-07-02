@@ -14,15 +14,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 if __name__ == "__main__":
-    PARAMETER_SPACE = "09"
+    PARAMETER_SPACE = "10"
     ROOT = Path(__file__).parents[1]
-    DATA_TYPE = "Training"
     ACCURACY = 1e-6
     IS_EXPORT = True
-    FIELD_NAME = "Entropy"
-    SUFFIX = "none" #"min_max"
+    FIELD_NAME = "Temperature"
+    SUFFIX = "min_max_init_grad" #"min_max"
     PROJECTION = "Mapped" #"Mapped"
-    spacing = 50
+    spacing = 100
     control_mesh_suffix = f"s{spacing}_{spacing}_{spacing}_b0_4000_0_5000_-4000_0"
     
     import_path = find_snapshot_path(PROJECTION, SUFFIX, FIELD_NAME, ROOT / "data" / PARAMETER_SPACE, control_mesh_suffix, "Training")

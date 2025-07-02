@@ -68,9 +68,16 @@ log_date_format = "%Y-%m-%d %H:%M:%S"
 
 
 [tool.uv.sources]
-salib = { path = "./src/SAlib", editable = true }
-mph = { path = "./src/MPh" }
-comsol-module = { path = "src/comsol_module", editable = true }
+salib = [
+    { path = "./src/SAlib", editable = true, marker = "sys_platform == 'darwin'" },
+    { git = "https://github.com/SALib/SALib", marker = "sys_platform == 'darwin'" },
+]
+mph = [
+    { path = "./src/MPh", marker = "sys_platform == 'darwin'" },
+    { git = "https://github.com/MPh-py/MPh#", marker = "sys_platform == 'win32'" },
+]
+comsol-module = { path = "src/comsol_module", editable = true, marker = "sys_platform == 'darwin'" }
+
 
 [tool.flake8]
 # Check that this is aligned with your other tools like Black
